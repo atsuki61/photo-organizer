@@ -122,12 +122,18 @@ def organize_photos(target_dir=None):
     groups_to_process = {}
     
     for base_name, files in base_names.items():
-        if len(files) > 1:  # 2ファイル以上の場合のみ処理対象
+        if len(files) > 1:  # 2ファイル以上の場合は常に処理対象
             print(f"'{base_name}' フォルダ: {len(files)}個のファイル")
             total_files += len(files)
             groups_to_process[base_name] = files
-        else:
-            print(f"'{base_name}': 1個のファイルのみ（スキップします）")
+        elif len(files) == 1:
+            # 1ファイルでも既存フォルダと同じ名前なら処理対象に含める
+            if base_name in existing_folders:
+                print(f"'{base_name}' フォルダ: {len(files)}個のファイル（既存フォルダに移動）")
+                total_files += len(files)
+                groups_to_process[base_name] = files
+            else:
+                print(f"'{base_name}': 1個のファイルのみ（スキップします）")
     
     if len(groups_to_process) == 0:
         print("\n整理対象のファイルグループがありません。")

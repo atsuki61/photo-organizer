@@ -83,11 +83,21 @@ def analyze_directory():
         # まず複数人名ファイルを統合（1ファイルでも統合対象になる）
         groups_after_merge = merge_multiple_names(groups, existing_folders)
         
-        # 統合後に1ファイルスキップを適用
-        processed_groups = {name: files for name, files in groups_after_merge.items() if len(files) > 1}
+        # 1ファイルでも既存フォルダと同じ名前なら処理対象に含める
+        processed_groups = {}
+        single_file_groups = {}
         
-        # 1ファイルグループの情報を収集（統合後のグループから）
-        single_file_groups = {name: files for name, files in groups_after_merge.items() if len(files) == 1}
+        for name, files in groups_after_merge.items():
+            if len(files) > 1:
+                # 複数ファイルは常に処理対象
+                processed_groups[name] = files
+            elif len(files) == 1:
+                # 1ファイルでも既存フォルダと同じ名前なら処理対象に含める
+                if name in existing_folders:
+                    processed_groups[name] = files
+                    print(f"1ファイルグループ '{name}' を既存フォルダに移動対象として追加")
+                else:
+                    single_file_groups[name] = files
         
         # 結果を保存
         global current_analysis
