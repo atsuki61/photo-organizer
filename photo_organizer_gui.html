@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>写真整理ツール GUI版 - Photo Organizer</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+
+      .header {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        color: white;
+        padding: 30px;
+        text-align: center;
+      }
+
+      .header h1 {
+        font-size: 2.5em;
+        margin-bottom: 10px;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+      }
+
+      .header p {
+        font-size: 1.2em;
+        opacity: 0.9;
+      }
+
+      .main-content {
+        padding: 40px;
+      }
+
+      .section {
+        margin-bottom: 40px;
+        padding: 30px;
+        border: 2px dashed #e0e0e0;
+        border-radius: 10px;
+        transition: all 0.3s ease;
+      }
+
+      .section:hover {
+        border-color: #4facfe;
+        background-color: #f8f9ff;
+      }
+
+      .section h2 {
+        color: #333;
+        margin-bottom: 20px;
+        font-size: 1.5em;
+        display: flex;
+        align-items: center;
+      }
+
+      .section h2::before {
+        content: "📁";
+        margin-right: 10px;
+        font-size: 1.2em;
+      }
+
+      .file-input-wrapper {
+        position: relative;
+        display: inline-block;
+        width: 100%;
+      }
+
+      .file-input {
+        position: absolute;
+        opacity: 0;
+        width: 100%;
+        height: 100%;
+        cursor: pointer;
+      }
+
+      .file-input-button {
+        display: block;
+        width: 100%;
+        padding: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        text-align: center;
+        border-radius: 10px;
+        font-size: 1.1em;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border: none;
+      }
+
+      .file-input-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+      }
+
+      .selected-folder {
+        margin-top: 15px;
+        padding: 15px;
+        background: #e8f5e8;
+        border-radius: 8px;
+        border-left: 4px solid #4caf50;
+      }
+
+      .file-list {
+        max-height: 300px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        margin-top: 20px;
+      }
+
+      .file-item {
+        padding: 10px 15px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .file-item:last-child {
+        border-bottom: none;
+      }
+
+      .file-item:nth-child(even) {
+        background-color: #f9f9f9;
+      }
+
+      .file-name {
+        font-weight: 500;
+        color: #333;
+      }
+
+      .file-extension {
+        background: #e3f2fd;
+        color: #1976d2;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 0.8em;
+        font-weight: bold;
+      }
+
+      .preview-section {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        margin-top: 20px;
+      }
+
+      .preview-section h3 {
+        color: #495057;
+        margin-bottom: 15px;
+        font-size: 1.2em;
+      }
+
+      .folder-preview {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 15px;
+      }
+
+      .folder-card {
+        background: white;
+        border-radius: 8px;
+        padding: 15px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        border-left: 4px solid #4facfe;
+      }
+
+      .folder-card h4 {
+        color: #333;
+        margin-bottom: 8px;
+        font-size: 1em;
+      }
+
+      .folder-card .file-count {
+        color: #666;
+        font-size: 0.9em;
+      }
+
+      .action-buttons {
+        display: flex;
+        gap: 15px;
+        margin-top: 30px;
+        justify-content: center;
+      }
+
+      .btn {
+        padding: 15px 30px;
+        border: none;
+        border-radius: 8px;
+        font-size: 1.1em;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        display: inline-block;
+        text-align: center;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        color: white;
+      }
+
+      .btn-secondary {
+        background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        color: #333;
+      }
+
+      .btn-danger {
+        background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+        color: #333;
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+      }
+
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 20px;
+        margin: 20px 0;
+      }
+
+      .stat-card {
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+
+      .stat-number {
+        font-size: 2em;
+        font-weight: bold;
+        color: #4facfe;
+        margin-bottom: 5px;
+      }
+
+      .stat-label {
+        color: #666;
+        font-size: 0.9em;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 20px;
+        background: #e0e0e0;
+        border-radius: 10px;
+        overflow: hidden;
+        margin: 20px 0;
+        display: none;
+      }
+
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        width: 0%;
+        transition: width 0.3s ease;
+      }
+
+      .log-section {
+        background: #2d3748;
+        color: #e2e8f0;
+        border-radius: 10px;
+        padding: 20px;
+        margin-top: 20px;
+        font-family: "Courier New", monospace;
+        max-height: 300px;
+        overflow-y: auto;
+        display: none;
+      }
+
+      .log-entry {
+        margin-bottom: 5px;
+        padding: 5px 0;
+      }
+
+      .log-success {
+        color: #68d391;
+      }
+
+      .log-error {
+        color: #fc8181;
+      }
+
+      .log-info {
+        color: #63b3ed;
+      }
+
+      .warning {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        color: #856404;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 20px 0;
+      }
+
+      .warning::before {
+        content: "⚠️ ";
+        font-weight: bold;
+      }
+
+      @media (max-width: 768px) {
+        .main-content {
+          padding: 20px;
+        }
+
+        .action-buttons {
+          flex-direction: column;
+        }
+
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>📸 写真整理ツール GUI版</h1>
+        <p>同じ名前の写真ファイルを簡単にフォルダ分けできます</p>
+      </div>
+
+      <div class="main-content">
+        <!-- フォルダ選択セクション -->
+        <div class="section">
+          <h2>フォルダを選択</h2>
+          <div class="file-input-wrapper">
+            <input
+              type="file"
+              id="folderInput"
+              class="file-input"
+              webkitdirectory
+              multiple
+            />
+            <label for="folderInput" class="file-input-button">
+              📁 整理したい写真フォルダを選択してください
+            </label>
+          </div>
+          <div
+            id="selectedFolder"
+            class="selected-folder"
+            style="display: none"
+          >
+            <strong>選択されたフォルダ:</strong> <span id="folderPath"></span>
+          </div>
+        </div>
+
+        <!-- 統計情報 -->
+        <div id="statsSection" style="display: none">
+          <div class="stats">
+            <div class="stat-card">
+              <div class="stat-number" id="totalFiles">0</div>
+              <div class="stat-label">画像ファイル</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="totalGroups">0</div>
+              <div class="stat-label">作成予定フォルダ</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="duplicateFiles">0</div>
+              <div class="stat-label">複数人名ファイル</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ファイル一覧 -->
+        <div id="fileListSection" class="section" style="display: none">
+          <h2>検出された画像ファイル</h2>
+          <div id="fileList" class="file-list"></div>
+        </div>
+
+        <!-- プレビューセクション -->
+        <div id="previewSection" class="preview-section" style="display: none">
+          <h3>📋 整理プレビュー</h3>
+          <div class="warning">
+            このプレビューは実際のファイル移動のシミュレーションです。「整理を実行」ボタンを押すと、ブラウザの制限により実際のファイル移動はできませんが、整理計画をダウンロードできます。
+          </div>
+          <div id="folderPreview" class="folder-preview"></div>
+        </div>
+
+        <!-- アクションボタン -->
+        <div class="action-buttons">
+          <button
+            id="analyzeBtn"
+            class="btn btn-secondary"
+            onclick="analyzeFiles()"
+            disabled
+          >
+            🔍 ファイルを解析
+          </button>
+          <button
+            id="previewBtn"
+            class="btn btn-primary"
+            onclick="showPreview()"
+            disabled
+          >
+            👁️ 整理プレビュー
+          </button>
+          <button
+            id="downloadBtn"
+            class="btn btn-danger"
+            onclick="downloadOrganizationPlan()"
+            disabled
+          >
+            💾 整理計画をダウンロード
+          </button>
+        </div>
+
+        <!-- プログレスバー -->
+        <div id="progressBar" class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+
+        <!-- ログセクション -->
+        <div id="logSection" class="log-section">
+          <div id="logContent"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let selectedFiles = [];
+      let organizationPlan = {};
+      let existingFolders = new Set();
+
+      // ファイル選択時の処理
+      document
+        .getElementById("folderInput")
+        .addEventListener("change", function (event) {
+          selectedFiles = Array.from(event.target.files);
+
+          if (selectedFiles.length > 0) {
+            const folderPath =
+              selectedFiles[0].webkitRelativePath.split("/")[0];
+            document.getElementById("folderPath").textContent = folderPath;
+            document.getElementById("selectedFolder").style.display = "block";
+            document.getElementById("analyzeBtn").disabled = false;
+
+            log("フォルダが選択されました: " + folderPath, "info");
+          }
+        });
+
+      // ログ出力関数
+      function log(message, type = "info") {
+        const logSection = document.getElementById("logSection");
+        const logContent = document.getElementById("logContent");
+
+        logSection.style.display = "block";
+
+        const logEntry = document.createElement("div");
+        logEntry.className = `log-entry log-${type}`;
+        logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+
+        logContent.appendChild(logEntry);
+        logContent.scrollTop = logContent.scrollHeight;
+      }
+
+      // ファイル解析
+      function analyzeFiles() {
+        if (selectedFiles.length === 0) {
+          alert("フォルダを選択してください。");
+          return;
+        }
+
+        log("ファイル解析を開始します...", "info");
+
+        // 画像ファイルのみフィルタリング
+        const imageExtensions = [
+          ".jpg",
+          ".jpeg",
+          ".jfif",
+          ".jpe", // JPEG系
+          ".png",
+          ".gif",
+          ".bmp",
+          ".tiff",
+          ".tif", // 一般的な形式
+          ".webp",
+          ".avif",
+          ".heic",
+          ".heif", // 新しい形式
+          ".raw",
+          ".cr2",
+          ".nef",
+          ".arw",
+          ".dng", // RAW形式
+          ".svg",
+          ".ico", // その他
+        ];
+        const imageFiles = selectedFiles.filter((file) => {
+          const extension = "." + file.name.split(".").pop().toLowerCase();
+          return imageExtensions.includes(extension);
+        });
+
+        log(`${imageFiles.length} 個の画像ファイルが見つかりました`, "success");
+
+        // ファイル一覧を表示
+        displayFileList(imageFiles);
+
+        // 統計情報を更新
+        updateStats(imageFiles);
+
+        // ボタンを有効化
+        document.getElementById("previewBtn").disabled = false;
+
+        log("ファイル解析が完了しました", "success");
+      }
+
+      // ファイル一覧表示
+      function displayFileList(files) {
+        const fileList = document.getElementById("fileList");
+        fileList.innerHTML = "";
+
+        files.forEach((file) => {
+          const fileItem = document.createElement("div");
+          fileItem.className = "file-item";
+
+          const fileName = document.createElement("span");
+          fileName.className = "file-name";
+          fileName.textContent = file.name;
+
+          const fileExt = document.createElement("span");
+          fileExt.className = "file-extension";
+          fileExt.textContent = "." + file.name.split(".").pop().toUpperCase();
+
+          fileItem.appendChild(fileName);
+          fileItem.appendChild(fileExt);
+          fileList.appendChild(fileItem);
+        });
+
+        document.getElementById("fileListSection").style.display = "block";
+      }
+
+      // 統計情報更新
+      function updateStats(files) {
+        const groups = analyzeFileGroups(files);
+        const duplicateCount = countDuplicateNameFiles(files, groups);
+
+        document.getElementById("totalFiles").textContent = files.length;
+        document.getElementById("totalGroups").textContent =
+          Object.keys(groups).length;
+        document.getElementById("duplicateFiles").textContent = duplicateCount;
+        document.getElementById("statsSection").style.display = "block";
+      }
+
+      // ファイルグループ解析（1ファイルのグループは除外）
+      function analyzeFileGroups(files) {
+        const groups = {};
+
+        files.forEach((file) => {
+          const fileName = file.name.replace(/\.[^/.]+$/, ""); // 拡張子を除去
+
+          // 特殊パターンの除去
+          let cleanName = fileName.replace(/\s*-?\s*コピー$/, "");
+          cleanName = cleanName.replace(/\s*コピー$/, "");
+          cleanName = cleanName.replace(
+            /photo-\d+\s*\(\d+\)\s*-?\s*コピー$/,
+            ""
+          );
+
+          // "名前 (数字)" パターンの処理
+          const match = cleanName.match(/^(.+?)\s*\((\d+)\)$/);
+          const baseName = match ? match[1].trim() : cleanName.trim();
+
+          if (!groups[baseName]) {
+            groups[baseName] = [];
+          }
+          groups[baseName].push(file);
+        });
+
+        // 1ファイルのグループを除外
+        const filteredGroups = {};
+        Object.keys(groups).forEach((baseName) => {
+          if (groups[baseName].length > 1) {
+            filteredGroups[baseName] = groups[baseName];
+          }
+        });
+
+        organizationPlan = filteredGroups;
+        return filteredGroups;
+      }
+
+      // 複数人名ファイルのカウント
+      function countDuplicateNameFiles(files, groups) {
+        // この実装では簡単な例として、既存フォルダ名で始まるファイルをカウント
+        // 実際の実装では、より複雑なロジックが必要
+        return 0; // 簡略化
+      }
+
+      // プレビュー表示
+      function showPreview() {
+        if (Object.keys(organizationPlan).length === 0) {
+          alert("まずファイルを解析してください。");
+          return;
+        }
+
+        log("整理プレビューを生成中...", "info");
+
+        const folderPreview = document.getElementById("folderPreview");
+        folderPreview.innerHTML = "";
+
+        // スキップされるファイルの情報を表示
+        const allGroups = {};
+        selectedFiles.forEach((file) => {
+          const fileName = file.name.replace(/\.[^/.]+$/, "");
+          let cleanName = fileName.replace(/\s*-?\s*コピー$/, "");
+          cleanName = cleanName.replace(/\s*コピー$/, "");
+          const match = cleanName.match(/^(.+?)\s*\((\d+)\)$/);
+          const baseName = match ? match[1].trim() : cleanName.trim();
+
+          if (!allGroups[baseName]) {
+            allGroups[baseName] = [];
+          }
+          allGroups[baseName].push(file);
+        });
+
+        const skippedGroups = Object.keys(allGroups).filter(
+          (name) => allGroups[name].length === 1 && !organizationPlan[name]
+        );
+
+        if (skippedGroups.length > 0) {
+          const skipInfo = document.createElement("div");
+          skipInfo.className = "warning";
+          skipInfo.style.marginBottom = "20px";
+          skipInfo.innerHTML = `
+            <strong>📝 スキップされるファイル:</strong><br>
+            ${
+              skippedGroups.length
+            }個のファイルは1個のみのため、フォルダに移動されません。<br>
+            <small style="color: #666;">例: ${skippedGroups
+              .slice(0, 3)
+              .join(", ")}${skippedGroups.length > 3 ? "..." : ""}</small>
+          `;
+          folderPreview.appendChild(skipInfo);
+        }
+
+        Object.entries(organizationPlan).forEach(([folderName, files]) => {
+          const folderCard = document.createElement("div");
+          folderCard.className = "folder-card";
+
+          const folderTitle = document.createElement("h4");
+          folderTitle.textContent = `📁 ${folderName}`;
+
+          const fileCount = document.createElement("div");
+          fileCount.className = "file-count";
+          fileCount.textContent = `${files.length} ファイル`;
+
+          folderCard.appendChild(folderTitle);
+          folderCard.appendChild(fileCount);
+
+          // ファイル名の一部を表示
+          if (files.length > 0) {
+            const fileNames = files
+              .slice(0, 3)
+              .map((f) => f.name)
+              .join(", ");
+            const fileList = document.createElement("div");
+            fileList.style.fontSize = "0.8em";
+            fileList.style.color = "#888";
+            fileList.style.marginTop = "5px";
+            fileList.textContent = fileNames + (files.length > 3 ? "..." : "");
+            folderCard.appendChild(fileList);
+          }
+
+          folderPreview.appendChild(folderCard);
+        });
+
+        document.getElementById("previewSection").style.display = "block";
+        document.getElementById("downloadBtn").disabled = false;
+
+        log(
+          `プレビューが生成されました（${
+            Object.keys(organizationPlan).length
+          }個のフォルダ、${skippedGroups.length}個のファイルをスキップ）`,
+          "success"
+        );
+      }
+
+      // 整理計画のダウンロード
+      function downloadOrganizationPlan() {
+        if (Object.keys(organizationPlan).length === 0) {
+          alert("整理計画がありません。");
+          return;
+        }
+
+        log("整理計画をダウンロード中...", "info");
+
+        // Pythonスクリプトを生成
+        const pythonScript = generatePythonScript();
+
+        // テキストファイルとしてダウンロード
+        const blob = new Blob([pythonScript], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "photo_organizer_plan.py";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        // CSVレポートも生成
+        const csvReport = generateCSVReport();
+        const csvBlob = new Blob([csvReport], { type: "text/csv" });
+        const csvUrl = URL.createObjectURL(csvBlob);
+        const csvA = document.createElement("a");
+        csvA.href = csvUrl;
+        csvA.download = "organization_plan.csv";
+        document.body.appendChild(csvA);
+        csvA.click();
+        document.body.removeChild(csvA);
+        URL.revokeObjectURL(csvUrl);
+
+        log("整理計画がダウンロードされました", "success");
+      }
+
+      // Pythonスクリプト生成
+      function generatePythonScript() {
+        let script = `#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+写真整理スクリプト - GUI版で生成
+このスクリプトは写真整理ツールGUI版で生成されました。
+
+注意: このスクリプトは2個以上の同名ファイルがあるグループのみを処理します。
+1個のみのファイルはそのまま残されます。
+"""
+
+import os
+import shutil
+from pathlib import Path
+
+def organize_photos():
+    """写真ファイルを整理する（1ファイルのグループはスキップ）"""
+    current_dir = Path('.')
+    
+    print("写真整理を開始します...")
+    print("注意: 1個のみのファイルはフォルダに移動されません。")
+    
+    # 整理計画
+    organization_plan = {
+`;
+
+        Object.entries(organizationPlan).forEach(([folderName, files]) => {
+          script += `        "${folderName}": [\n`;
+          files.forEach((file) => {
+            script += `            "${file.name}",\n`;
+          });
+          script += `        ],\n`;
+        });
+
+        script += `    }
+    
+    print("写真整理を開始します...")
+    
+    for folder_name, file_names in organization_plan.items():
+        print(f"\\n'{folder_name}' フォルダを作成中...")
+        folder_path = current_dir / folder_name
+        folder_path.mkdir(exist_ok=True)
+        
+        for file_name in file_names:
+            source_file = current_dir / file_name
+            if source_file.exists():
+                destination = folder_path / file_name
+                try:
+                    shutil.move(str(source_file), str(destination))
+                    print(f"  移動: {file_name} → {folder_name}/")
+                except Exception as e:
+                    print(f"  エラー: {file_name} の移動に失敗 - {e}")
+            else:
+                print(f"  警告: {file_name} が見つかりません")
+    
+    print("\\n整理完了！")
+
+if __name__ == "__main__":
+    response = input("写真ファイルを整理しますか？ (y/n): ")
+    if response.lower() in ['y', 'yes', 'はい']:
+        organize_photos()
+    else:
+        print("キャンセルされました。")
+`;
+
+        return script;
+      }
+
+      // CSVレポート生成
+      function generateCSVReport() {
+        let csv = "フォルダ名,ファイル数,ファイル一覧\\n";
+
+        Object.entries(organizationPlan).forEach(([folderName, files]) => {
+          const fileNames = files.map((f) => f.name).join("; ");
+          csv += `"${folderName}",${files.length},"${fileNames}"\\n`;
+        });
+
+        return csv;
+      }
+
+      // 初期化
+      document.addEventListener("DOMContentLoaded", function () {
+        log("写真整理ツール GUI版が起動しました", "info");
+        log("フォルダを選択して開始してください", "info");
+      });
+    </script>
+  </body>
+</html>
