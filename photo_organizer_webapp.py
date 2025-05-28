@@ -295,31 +295,25 @@ def get_folder_path():
         if not file_paths:
             return jsonify({'error': 'ファイルパスが提供されていません'}), 400
         
-        # 最初のファイルパスからフォルダパスを推定
+        # ブラウザからは相対パスしか取得できないため、
+        # ユーザーに手動でパスを入力してもらう必要がある
         first_file_path = file_paths[0]
         
-        # パスの区切り文字を統一
-        normalized_path = first_file_path.replace('/', os.sep).replace('\\', os.sep)
-        
-        # フォルダパスを取得
-        folder_path = os.path.dirname(normalized_path)
-        
-        # 実際に存在するかチェック
-        if os.path.exists(folder_path):
-            return jsonify({
-                'success': True,
-                'folder_path': folder_path,
-                'file_count': len(file_paths)
-            })
+        # webkitRelativePathから基本的な情報を取得
+        if '/' in first_file_path:
+            folder_name = first_file_path.split('/')[0]
+        elif '\\' in first_file_path:
+            folder_name = first_file_path.split('\\')[0]
         else:
-            # パスが存在しない場合は、相対パス情報を返す
-            folder_name = os.path.basename(folder_path) if folder_path else 'Unknown'
-            return jsonify({
-                'success': True,
-                'folder_path': f"選択されたフォルダ: {folder_name}",
-                'file_count': len(file_paths),
-                'note': 'ブラウザの制限により完全なパスは取得できません'
-            })
+            folder_name = 'Unknown'
+        
+        return jsonify({
+            'success': True,
+            'folder_name': folder_name,
+            'file_count': len(file_paths),
+            'note': 'ブラウザの制限により、フォルダの完全なパスは取得できません。手動でパスを入力してください。',
+            'requires_manual_input': True
+        })
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -520,7 +514,7 @@ def get_unique_filename(folder_path, filename):
     # 複雑な番号パターンをすべて除去して、クリーンなベース名を取得
     import re
     # 複数の (数字) パターンを除去
-    clean_base_name = re.sub(r'\\s*\\(\\d+\\)(?:\\s*\\(\\d+\\))*\\s*$', '', base_name).strip()
+    clean_base_name = re.sub(r'\\\\s*\\\\(\\\\d+\\\\)(?:\\\\s*\\\\(\\\\d+\\\\))*\\\\s*$', '', base_name).strip()
     
     # フォルダ内の既存ファイルから最大番号を見つける
     max_number = 0
@@ -538,7 +532,7 @@ def get_unique_filename(folder_path, filename):
                             max_number = max(max_number, 1)
                         else:
                             # 番号付きファイルから最後の番号を取得
-                            numbers = re.findall(r'\\((\\d+)\\)', remaining)
+                            numbers = re.findall(r'\\\\((\\\\d+)\\\\)', remaining)
                             if numbers:
                                 last_number = int(numbers[-1])
                                 max_number = max(max_number, last_number)
@@ -645,7 +639,7 @@ if __name__ == "__main__":
     return script
 
 # HTMLテンプレート
-HTML_TEMPLATE = '''
+HTML_TEMPLATE = r'''
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -703,8 +697,10 @@ HTML_TEMPLATE = '''
         .btn-primary { background: #4facfe; color: white; }
         .btn-success { background: #28a745; color: white; }
         .btn-warning { background: #ffc107; color: #333; }
-        .btn:hover { opacity: 0.9; }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-info { background: #17a2b8; color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         .btn-group {
             display: flex;
             gap: 10px;
@@ -729,6 +725,105 @@ HTML_TEMPLATE = '''
             border-radius: 8px;
             border-left: 4px solid #4caf50;
             display: none;
+        }
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            display: none;
+        }
+        .modal-content {
+            background-color: white;
+            margin: 2% auto;
+            padding: 0;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 700px;
+            max-height: 90vh;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            animation: modalSlideIn 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+        @keyframes modalSlideIn {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .modal-header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 15px 15px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.5em;
+        }
+        .close {
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+        }
+        .close:hover {
+            opacity: 1;
+        }
+        .modal-body {
+            padding: 30px;
+            line-height: 1.6;
+            overflow-y: auto;
+            flex: 1;
+            max-height: calc(90vh - 140px);
+        }
+        .step {
+            margin-bottom: 25px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #4facfe;
+        }
+        .step h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+        .step h4 {
+            color: #4facfe;
+            margin: 15px 0 8px 0;
+            font-size: 1.1em;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 5px;
+        }
+        .modal-footer {
+            padding: 20px 30px;
+            text-align: center;
+            border-top: 1px solid #e0e0e0;
+            flex-shrink: 0;
+            background: white;
+            border-radius: 0 0 15px 15px;
+        }
+        .modal-body::-webkit-scrollbar {
+            width: 8px;
+        }
+        .modal-body::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .modal-body::-webkit-scrollbar-thumb {
+            background: #4facfe;
+            border-radius: 4px;
+        }
+        .modal-body::-webkit-scrollbar-thumb:hover {
+            background: #3a8bfe;
         }
         .stats {
             display: grid;
@@ -768,6 +863,37 @@ HTML_TEMPLATE = '''
         .hidden { display: none; }
         .error { color: #dc3545; }
         .success { color: #28a745; }
+        
+        /* レスポンシブ対応 */
+        @media (max-width: 768px) {
+            .modal-content {
+                width: 95%;
+                margin: 1% auto;
+                max-height: 95vh;
+            }
+            
+            .modal-body {
+                padding: 20px;
+                max-height: calc(95vh - 120px);
+            }
+            
+            .modal-footer {
+                padding: 15px 20px;
+            }
+            
+            .step {
+                padding: 15px;
+                margin-bottom: 15px;
+            }
+            
+            .modal-header {
+                padding: 15px 20px;
+            }
+            
+            .modal-header h2 {
+                font-size: 1.3em;
+            }
+        }
     </style>
 </head>
 <body>
@@ -782,17 +908,22 @@ HTML_TEMPLATE = '''
                 <h2>📁 ディレクトリを指定</h2>
                 <div class="form-group">
                     <label for="directoryPath">整理したい写真フォルダのパス:</label>
-                    <input type="text" id="directoryPath" placeholder="例: C:\\Users\\YourName\\Pictures">
+                    <input type="text" id="directoryPath" placeholder="例: C:/Users/YourName/Pictures">
+                    <small style="color: #666; margin-top: 5px; display: block;">
+                        💡 「📁 フォルダ選択」ボタンを使うと、フォルダを選択してパスを簡単に入力できます
+                    </small>
                 </div>
                 <div class="btn-group">
                     <button class="btn btn-primary" onclick="analyzeDirectory()">🔍 解析開始</button>
                     <div class="file-input-wrapper">
-                        <input type="file" id="folderInput" class="file-input" webkitdirectory multiple>
+                        <input type="file" id="folderInput" class="file-input" webkitdirectory multiple accept="image/*">
                         <button class="btn btn-warning">📁 フォルダ選択</button>
                     </div>
+                    <button class="btn btn-info" onclick="showUsageModal()">❓ 使い方</button>
                 </div>
                 <div id="selectedFolder" class="selected-folder">
                     <strong>選択されたフォルダ:</strong> <span id="selectedFolderPath"></span>
+                    <br><small style="color: #666;">フォルダ選択後、完全なパスを入力してください</small>
                 </div>
             </div>
             
@@ -823,6 +954,77 @@ HTML_TEMPLATE = '''
             </div>
             
             <div id="logSection" class="log hidden"></div>
+        </div>
+    </div>
+
+    <!-- 使い方モーダル -->
+    <div id="usageModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📖 写真整理ツールの使い方</h2>
+                <span class="close" onclick="closeUsageModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="step">
+                    <h3>🎯 このツールの目的</h3>
+                    <p>同じ名前の写真ファイルを自動的にフォルダ分けして整理し、<strong>フォルダも自動で作成</strong>します。</p>
+                    
+                    <h4>📋 基本的な整理例</h4>
+                    <p><strong>例1：</strong> <code>田中.jpg</code>, <code>田中 (1).jpg</code>, <code>田中 (2).jpg</code><br>
+                    → <code>田中</code>フォルダを自動作成してまとめる</p>
+                    
+                    <p><strong>例2：</strong> <code>佐藤.png</code>, <code>佐藤コピー.png</code>, <code>佐藤 (3).png</code><br>
+                    → <code>佐藤</code>フォルダを自動作成してまとめる</p>
+                    
+                    <h4>🔄 複数人名の自動統合</h4>
+                    <p><strong>例：</strong> <code>田中山田.jpg</code>ファイルがある場合<br>
+                    → 既存の<code>田中</code>フォルダがあれば、そこに自動移動</p>
+                    
+                    <p><strong>例：</strong> <code>鈴木田中佐藤.jpg</code>ファイルがある場合<br>
+                    → 既存の<code>鈴木</code>フォルダがあれば、そこに自動移動（最長一致）</p>
+                    
+                    <h4>📁 1ファイルでも移動対象</h4>
+                    <p>通常1ファイルのみのグループはスキップされますが、<strong>既存フォルダと同じ名前</strong>なら移動対象になります。</p>
+                    <p><strong>例：</strong> <code>田中</code>フォルダが既にあり、<code>田中新.jpg</code>が1ファイルだけでも<code>田中</code>フォルダに移動</p>
+                </div>
+                
+                <div class="step">
+                    <h3>📁 フォルダ選択の使い方</h3>
+                    <p><strong>⚠️ 重要：</strong> このアプリでは、ブラウザのセキュリティ制限により、<strong>ファイル選択による直接のパス入力ができません</strong>。</p>
+                                        <h4>📋 パスの取得方法</h4>
+                    <p><strong>1.</strong> 「📁 フォルダ選択」ボタンをクリック</p>
+                    <p><strong>2.</strong> フォルダを開き、アドレスバーを右クリック「アドレスをテキストとしてコピー」</p>
+                    <p><strong>3.</strong> コピーしたパスを入力欄に貼り付け</p>                    
+                    <h4>💡 パス入力例</h4>
+                    <p><code>C:\Users\YourName\Pictures\写真フォルダ</code></p>
+                    <p><code>D:\Photos\2024年\家族写真</code></p>
+                    <p><strong>注意：</strong> 必ず完全なパス（ドライブ文字から）を入力してください</p>
+                </div>
+                
+                <div class="step">
+                    <h3>⚙️ 整理の流れ</h3>
+                    <p><strong>1.</strong> パスを入力 → 「🔍 解析開始」</p>
+                    <p><strong>2.</strong> 検出されたファイルを確認 → 「👁️ 整理プレビュー」</p>
+                    <p><strong>3.</strong> 整理計画を確認 → 「✅ 整理を実行」</p>
+                </div>
+                
+                <div class="step">
+                    <h3>🔧 特殊機能</h3>
+                    <p><strong>• 複数人名対応：</strong> 「田中佐藤.jpg」→ 既存の「田中」フォルダに移動</p>
+                    <p><strong>• 1ファイル対応：</strong> 1ファイルでも既存フォルダと同名なら移動</p>
+                    <p><strong>• 重複回避：</strong> 同名ファイルは自動的にリネーム</p>
+                </div>
+                
+                <div class="step">
+                    <h3>⚠️ 注意事項</h3>
+                    <p><strong>• バックアップ推奨：</strong> 実行前に重要なファイルのバックアップを取ってください</p>
+                    <p><strong>• 1ファイルスキップ：</strong> 1ファイルのみのグループは基本的にスキップされます</p>
+                    <p><strong>• パス入力必須：</strong> フォルダ選択後は必ず完全なパスを入力してください</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeUsageModal()">理解しました</button>
+            </div>
         </div>
     </div>
 
@@ -963,6 +1165,8 @@ HTML_TEMPLATE = '''
 
         // フォルダ選択機能
         document.getElementById('folderInput').addEventListener('change', async function(event) {
+            // アップロード確認ダイアログを防ぐ
+            event.preventDefault();
             const files = event.target.files;
             if (files.length > 0) {
                 log('フォルダパスを取得中...', 'info');
@@ -990,19 +1194,52 @@ HTML_TEMPLATE = '''
                     const data = await response.json();
                     
                     if (data.success) {
-                        // パス入力欄に設定
-                        document.getElementById('directoryPath').value = data.folder_path;
-                        
-                        // 選択されたフォルダ情報を表示
-                        const displayText = `${data.folder_path} (${data.file_count}ファイル)`;
-                        document.getElementById('selectedFolderPath').textContent = displayText;
-                        document.getElementById('selectedFolder').style.display = 'block';
-                        
-                        log(`フォルダが選択されました: ${data.file_count}ファイル`, 'success');
-                        if (data.note) {
+                        if (data.requires_manual_input) {
+                            // 手動入力が必要な場合
+                            const folderName = data.folder_name;
+                            const fileCount = data.file_count;
+                            
+                            // 選択されたフォルダ情報を表示
+                            const displayText = `${folderName} (${fileCount}ファイル)`;
+                            document.getElementById('selectedFolderPath').textContent = displayText;
+                            document.getElementById('selectedFolder').style.display = 'block';
+                            
+                            log(`フォルダが選択されました: ${folderName} (${fileCount}ファイル)`, 'success');
                             log(data.note, 'info');
+                            
+                            // ユーザーに完全なパスの入力を促す
+                            const userPath = prompt(
+                                `📁 フォルダ "${folderName}" が選択されました (${fileCount}ファイル)\\n\\n` +
+                                `このフォルダの完全なパスを入力してください:\\n\\n` +
+                                `💡 エクスプローラーでフォルダを右クリック → "パスのコピー" で取得できます\\n\\n` +
+                                `例: C:/Users/YourName/Pictures/${folderName}\\n` +
+                                `例: D:/Photos/${folderName}\\n\\n` +
+                                `キャンセルした場合は、手動でパス入力欄に入力してください。`,
+                                ``
+                            );
+                            
+                            if (userPath && userPath.trim()) {
+                                document.getElementById('directoryPath').value = userPath.trim();
+                                log('パスが設定されました。解析を開始してください。', 'success');
+                            } else {
+                                log('パスが入力されませんでした。手動でパス入力欄に入力してください。', 'info');
+                                // パス入力欄にフォーカス
+                                document.getElementById('directoryPath').focus();
+                            }
+                            
+                            // ファイル入力をリセットしてアップロードを防ぐ
+                            document.getElementById('folderInput').value = '';
+                        } else {
+                            // 完全なパスが取得できた場合（稀なケース）
+                            document.getElementById('directoryPath').value = data.folder_path;
+                            
+                            const displayText = `${data.folder_path} (${data.file_count}ファイル)`;
+                            document.getElementById('selectedFolderPath').textContent = displayText;
+                            document.getElementById('selectedFolder').style.display = 'block';
+                            
+                            log(`フォルダが選択されました: ${data.file_count}ファイル`, 'success');
+                            log('パス入力欄に設定されました。解析を開始してください。', 'info');
                         }
-                        log('パス入力欄に設定されました。解析を開始してください。', 'info');
                     } else {
                         throw new Error(data.error || 'パス取得に失敗しました');
                     }
@@ -1021,10 +1258,50 @@ HTML_TEMPLATE = '''
                     
                     log('基本情報のみ設定されました。手動でパスを修正してください。', 'info');
                 }
+                
+                // 処理完了後、ファイル入力をリセットしてアップロードを防ぐ
+                document.getElementById('folderInput').value = '';
+            }
+        });
+
+        // アップロード防止の設定
+        function preventFileUpload() {
+            // ページ全体でファイルドロップを無効化
+            document.addEventListener('dragover', function(e) {
+                e.preventDefault();
+            });
+            
+            document.addEventListener('drop', function(e) {
+                e.preventDefault();
+            });
+            
+            // フォーム送信を無効化
+            document.addEventListener('submit', function(e) {
+                e.preventDefault();
+                return false;
+            });
+        }
+        
+        // 使い方モーダル制御
+        function showUsageModal() {
+            document.getElementById('usageModal').style.display = 'block';
+            log('使い方ガイドを表示しました', 'info');
+        }
+        
+        function closeUsageModal() {
+            document.getElementById('usageModal').style.display = 'none';
+        }
+        
+        // モーダル外クリックで閉じる
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('usageModal');
+            if (event.target === modal) {
+                closeUsageModal();
             }
         });
 
         // 初期化
+        preventFileUpload();
         log('写真整理ツール Webアプリ版が起動しました', 'info');
     </script>
 </body>
