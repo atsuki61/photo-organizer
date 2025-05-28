@@ -696,11 +696,18 @@ HTML_TEMPLATE = r'''
         }
         .btn-primary { background: #4facfe; color: white; }
         .btn-success { background: #28a745; color: white; }
-        .btn-warning { background: #ffc107; color: #333; }
+        .btn-warning { background: #ffca28; color: #333; }
         .btn-info { background: #17a2b8; color: white; }
         .btn-secondary { background: #6c757d; color: white; }
         .btn:hover { opacity: 0.9; transform: translateY(-1px); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        
+        /* フォルダ選択ボタンの特別なスタイル */
+        .file-input-wrapper .btn-warning {
+            background: #ffca28;
+            color: #333;
+            transition: all 0.3s ease;
+        }
         .btn-group {
             display: flex;
             gap: 10px;
@@ -717,6 +724,16 @@ HTML_TEMPLATE = r'''
             width: 100%;
             height: 100%;
             cursor: pointer;
+            z-index: 1;
+        }
+        .file-input-wrapper .btn {
+            position: relative;
+            z-index: 2;
+            pointer-events: none;
+        }
+        .file-input-wrapper:hover .btn {
+            opacity: 0.9;
+            transform: translateY(-1px);
         }
         .selected-folder {
             margin-top: 15px;
@@ -916,7 +933,7 @@ HTML_TEMPLATE = r'''
                 <div class="btn-group">
                     <button class="btn btn-primary" onclick="analyzeDirectory()">🔍 解析開始</button>
                     <div class="file-input-wrapper">
-                        <input type="file" id="folderInput" class="file-input" webkitdirectory multiple accept="image/*">
+                        <input type="file" id="folderInput" class="file-input" webkitdirectory multiple accept="image/*" onchange="return false;">
                         <button class="btn btn-warning">📁 フォルダ選択</button>
                     </div>
                     <button class="btn btn-info" onclick="showUsageModal()">❓ 使い方</button>
@@ -1167,7 +1184,14 @@ HTML_TEMPLATE = r'''
         document.getElementById('folderInput').addEventListener('change', async function(event) {
             // アップロード確認ダイアログを防ぐ
             event.preventDefault();
+            event.stopPropagation();
+            
             const files = event.target.files;
+            
+            // 即座にファイル入力をリセットしてアップロードを防ぐ
+            setTimeout(() => {
+                document.getElementById('folderInput').value = '';
+            }, 0);
             if (files.length > 0) {
                 log('フォルダパスを取得中...', 'info');
                 
@@ -1239,6 +1263,9 @@ HTML_TEMPLATE = r'''
                             
                             log(`フォルダが選択されました: ${data.file_count}ファイル`, 'success');
                             log('パス入力欄に設定されました。解析を開始してください。', 'info');
+                            
+                            // ファイル入力をリセットしてアップロードを防ぐ
+                            document.getElementById('folderInput').value = '';
                         }
                     } else {
                         throw new Error(data.error || 'パス取得に失敗しました');
@@ -1258,10 +1285,12 @@ HTML_TEMPLATE = r'''
                     
                     log('基本情報のみ設定されました。手動でパスを修正してください。', 'info');
                 }
-                
-                // 処理完了後、ファイル入力をリセットしてアップロードを防ぐ
-                document.getElementById('folderInput').value = '';
             }
+            
+            // 処理完了後、必ずファイル入力をリセットしてアップロードを防ぐ
+            setTimeout(() => {
+                document.getElementById('folderInput').value = '';
+            }, 500);
         });
 
         // アップロード防止の設定
@@ -1269,16 +1298,36 @@ HTML_TEMPLATE = r'''
             // ページ全体でファイルドロップを無効化
             document.addEventListener('dragover', function(e) {
                 e.preventDefault();
+                e.stopPropagation();
             });
             
             document.addEventListener('drop', function(e) {
                 e.preventDefault();
+                e.stopPropagation();
             });
             
             // フォーム送信を無効化
             document.addEventListener('submit', function(e) {
                 e.preventDefault();
+                e.stopPropagation();
                 return false;
+            });
+            
+            // beforeunload イベントでアップロードを防ぐ
+            window.addEventListener('beforeunload', function(e) {
+                // ファイル入力をクリア
+                const fileInputs = document.querySelectorAll('input[type="file"]');
+                fileInputs.forEach(input => input.value = '');
+            });
+            
+            // ファイル入力の変更を監視してアップロードを防ぐ
+            document.addEventListener('change', function(e) {
+                if (e.target.type === 'file' && e.target.id === 'folderInput') {
+                    // フォルダ選択以外のファイル操作を防ぐ
+                    setTimeout(() => {
+                        e.target.value = '';
+                    }, 100);
+                }
             });
         }
         
