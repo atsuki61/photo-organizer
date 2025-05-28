@@ -285,6 +285,45 @@ def get_unique_filename(folder_path, filename):
     
     return new_destination_path
 
+@app.route('/api/get_folder_path', methods=['POST'])
+def get_folder_path():
+    """選択されたファイルから実際のフォルダパスを取得"""
+    try:
+        data = request.get_json()
+        file_paths = data.get('file_paths', [])
+        
+        if not file_paths:
+            return jsonify({'error': 'ファイルパスが提供されていません'}), 400
+        
+        # 最初のファイルパスからフォルダパスを推定
+        first_file_path = file_paths[0]
+        
+        # パスの区切り文字を統一
+        normalized_path = first_file_path.replace('/', os.sep).replace('\\', os.sep)
+        
+        # フォルダパスを取得
+        folder_path = os.path.dirname(normalized_path)
+        
+        # 実際に存在するかチェック
+        if os.path.exists(folder_path):
+            return jsonify({
+                'success': True,
+                'folder_path': folder_path,
+                'file_count': len(file_paths)
+            })
+        else:
+            # パスが存在しない場合は、相対パス情報を返す
+            folder_name = os.path.basename(folder_path) if folder_path else 'Unknown'
+            return jsonify({
+                'success': True,
+                'folder_path': f"選択されたフォルダ: {folder_name}",
+                'file_count': len(file_paths),
+                'note': 'ブラウザの制限により完全なパスは取得できません'
+            })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/download_plan')
 def download_plan():
     """整理計画をダウンロード"""
@@ -666,6 +705,31 @@ HTML_TEMPLATE = '''
         .btn-warning { background: #ffc107; color: #333; }
         .btn:hover { opacity: 0.9; }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        .file-input {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        .selected-folder {
+            margin-top: 15px;
+            padding: 15px;
+            background: #e8f5e8;
+            border-radius: 8px;
+            border-left: 4px solid #4caf50;
+            display: none;
+        }
         .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -720,7 +784,16 @@ HTML_TEMPLATE = '''
                     <label for="directoryPath">整理したい写真フォルダのパス:</label>
                     <input type="text" id="directoryPath" placeholder="例: C:\\Users\\YourName\\Pictures">
                 </div>
-                <button class="btn btn-primary" onclick="analyzeDirectory()">🔍 解析開始</button>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="analyzeDirectory()">🔍 解析開始</button>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="folderInput" class="file-input" webkitdirectory multiple>
+                        <button class="btn btn-warning">📁 フォルダ選択</button>
+                    </div>
+                </div>
+                <div id="selectedFolder" class="selected-folder">
+                    <strong>選択されたフォルダ:</strong> <span id="selectedFolderPath"></span>
+                </div>
             </div>
             
             <div id="statsSection" class="hidden">
@@ -887,6 +960,69 @@ HTML_TEMPLATE = '''
                 log(`エラー: ${error.message}`, 'error');
             }
         }
+
+        // フォルダ選択機能
+        document.getElementById('folderInput').addEventListener('change', async function(event) {
+            const files = event.target.files;
+            if (files.length > 0) {
+                log('フォルダパスを取得中...', 'info');
+                
+                try {
+                    // ファイルパスの配列を作成
+                    const filePaths = Array.from(files).map(file => {
+                        // 可能な限り完全なパスを取得
+                        if (file.path) {
+                            return file.path; // Electronなどの環境
+                        } else if (file.webkitRelativePath) {
+                            return file.webkitRelativePath; // 通常のブラウザ
+                        } else {
+                            return file.name; // フォールバック
+                        }
+                    });
+                    
+                    // サーバーにパス解析を依頼
+                    const response = await fetch('/api/get_folder_path', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ file_paths: filePaths })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // パス入力欄に設定
+                        document.getElementById('directoryPath').value = data.folder_path;
+                        
+                        // 選択されたフォルダ情報を表示
+                        const displayText = `${data.folder_path} (${data.file_count}ファイル)`;
+                        document.getElementById('selectedFolderPath').textContent = displayText;
+                        document.getElementById('selectedFolder').style.display = 'block';
+                        
+                        log(`フォルダが選択されました: ${data.file_count}ファイル`, 'success');
+                        if (data.note) {
+                            log(data.note, 'info');
+                        }
+                        log('パス入力欄に設定されました。解析を開始してください。', 'info');
+                    } else {
+                        throw new Error(data.error || 'パス取得に失敗しました');
+                    }
+                } catch (error) {
+                    log(`エラー: ${error.message}`, 'error');
+                    
+                    // フォールバック: 基本的な情報のみ表示
+                    const firstFile = files[0];
+                    const folderName = firstFile.webkitRelativePath ? 
+                        firstFile.webkitRelativePath.split('/')[0] : 'Unknown';
+                    const fallbackPath = `選択されたフォルダ: ${folderName} (${files.length}ファイル)`;
+                    
+                    document.getElementById('directoryPath').value = fallbackPath;
+                    document.getElementById('selectedFolderPath').textContent = fallbackPath;
+                    document.getElementById('selectedFolder').style.display = 'block';
+                    
+                    log('基本情報のみ設定されました。手動でパスを修正してください。', 'info');
+                }
+            }
+        });
 
         // 初期化
         log('写真整理ツール Webアプリ版が起動しました', 'info');

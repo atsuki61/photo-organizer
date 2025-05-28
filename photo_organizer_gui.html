@@ -329,6 +329,122 @@
         font-weight: bold;
       }
 
+      /* モーダルスタイル */
+      .modal {
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(5px);
+      }
+
+      .modal-content {
+        background-color: white;
+        margin: 5% auto;
+        padding: 0;
+        border-radius: 15px;
+        width: 90%;
+        max-width: 600px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        animation: modalSlideIn 0.3s ease;
+      }
+
+      @keyframes modalSlideIn {
+        from {
+          transform: translateY(-50px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+
+      .modal-header {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        color: white;
+        padding: 20px 30px;
+        border-radius: 15px 15px 0 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .modal-header h2 {
+        margin: 0;
+        font-size: 1.5em;
+      }
+
+      .close {
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+        opacity: 0.7;
+        transition: opacity 0.3s;
+      }
+
+      .close:hover {
+        opacity: 1;
+      }
+
+      .modal-body {
+        padding: 30px;
+        line-height: 1.6;
+      }
+
+      .step {
+        margin-bottom: 25px;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 10px;
+        border-left: 4px solid #4facfe;
+      }
+
+      .step h3 {
+        color: #333;
+        margin-bottom: 10px;
+        font-size: 1.2em;
+      }
+
+      .execution-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+        margin-top: 15px;
+      }
+
+      .option {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+      }
+
+      .option h4 {
+        color: #4facfe;
+        margin-bottom: 8px;
+        font-size: 1em;
+      }
+
+      .option code {
+        background: #2d3748;
+        color: #e2e8f0;
+        padding: 8px 12px;
+        border-radius: 5px;
+        font-family: monospace;
+        display: block;
+        margin-top: 8px;
+      }
+
+      .modal-footer {
+        padding: 20px 30px;
+        text-align: center;
+        border-top: 1px solid #e0e0e0;
+      }
+
       @media (max-width: 768px) {
         .main-content {
           padding: 20px;
@@ -340,6 +456,15 @@
 
         .stats {
           grid-template-columns: repeat(2, 1fr);
+        }
+
+        .modal-content {
+          width: 95%;
+          margin: 10% auto;
+        }
+
+        .execution-options {
+          grid-template-columns: 1fr;
         }
       }
     </style>
@@ -428,12 +553,20 @@
             👁️ 整理プレビュー
           </button>
           <button
-            id="downloadBtn"
+            id="organizeBtn"
             class="btn btn-danger"
-            onclick="downloadOrganizationPlan()"
+            onclick="startOrganization()"
             disabled
           >
-            💾 整理計画をダウンロード
+            🚀 整理を開始
+          </button>
+          <button
+            id="downloadBtn"
+            class="btn btn-secondary"
+            onclick="downloadOrganizationFiles()"
+            disabled
+          >
+            💾 手動実行用ファイル
           </button>
         </div>
 
@@ -445,6 +578,66 @@
         <!-- ログセクション -->
         <div id="logSection" class="log-section">
           <div id="logContent"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 実行手順モーダル -->
+    <div id="executionModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>🚀 写真整理の実行手順</h2>
+          <span class="close" onclick="closeModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+          <div class="step">
+            <h3>📁 ステップ 1: ファイルをダウンロード</h3>
+            <p>以下のファイルがダウンロードされました：</p>
+            <ul>
+              <li>
+                <strong>photo_organizer_custom.py</strong> - 整理スクリプト
+              </li>
+              <li>
+                <strong>run_organizer.bat</strong> -
+                実行用バッチファイル（Windows）
+              </li>
+              <li><strong>organization_plan.csv</strong> - 整理計画レポート</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <h3>📂 ステップ 2: ファイルを移動</h3>
+            <p>
+              ダウンロードしたファイルを<strong>整理したい写真フォルダ</strong>に移動してください。
+            </p>
+          </div>
+
+          <div class="step">
+            <h3>▶️ ステップ 3: 実行</h3>
+            <div class="execution-options">
+              <div class="option">
+                <h4>🖱️ 簡単実行（Windows）</h4>
+                <p><code>run_organizer.bat</code> をダブルクリック</p>
+              </div>
+              <div class="option">
+                <h4>⌨️ コマンドライン実行</h4>
+                <p>写真フォルダでコマンドプロンプトを開き：</p>
+                <code>python photo_organizer_custom.py</code>
+              </div>
+            </div>
+          </div>
+
+          <div class="warning">
+            <strong>⚠️ 注意事項</strong><br />
+            • 実行前に重要なファイルのバックアップを取ることをお勧めします<br />
+            • 1ファイルのみのグループは既存フォルダがある場合のみ移動されます<br />
+            • 同名ファイルがある場合は自動的にリネームされます
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" onclick="closeModal()">
+            理解しました
+          </button>
         </div>
       </div>
     </div>
@@ -697,6 +890,7 @@
         });
 
         document.getElementById("previewSection").style.display = "block";
+        document.getElementById("organizeBtn").disabled = false;
         document.getElementById("downloadBtn").disabled = false;
 
         log(
@@ -705,6 +899,110 @@
           }個のフォルダ、${skippedGroups.length}個のファイルをスキップ）`,
           "success"
         );
+      }
+
+      // 整理開始（直接実行版）
+      async function startOrganization() {
+        if (Object.keys(organizationPlan).length === 0) {
+          alert("整理計画がありません。");
+          return;
+        }
+
+        // 確認ダイアログ
+        if (
+          !confirm(
+            "写真ファイルを実際に移動します。よろしいですか？\n\n※実行前にバックアップを取ることをお勧めします。"
+          )
+        ) {
+          return;
+        }
+
+        log("写真整理を開始します...", "info");
+
+        try {
+          // ローカルPythonスクリプトを実行
+          const response = await fetch("/execute-organizer", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              organizationPlan: organizationPlan,
+              folderPath: selectedFiles[0].webkitRelativePath.split("/")[0],
+            }),
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            log(
+              `整理完了: ${result.moved_files}ファイル移動、${result.created_folders}フォルダ作成`,
+              "success"
+            );
+
+            if (result.errors && result.errors.length > 0) {
+              result.errors.forEach((error) =>
+                log(`エラー: ${error}`, "error")
+              );
+            }
+          } else {
+            throw new Error("サーバーエラーが発生しました");
+          }
+        } catch (error) {
+          log(`エラー: ${error.message}`, "error");
+          log("代替案: 整理計画をダウンロードして手動実行してください", "info");
+
+          // フォールバック: ファイルダウンロード
+          const pythonScript = generateCustomPythonScript();
+          downloadFile(pythonScript, "photo_organizer_custom.py", "text/plain");
+
+          const batchScript = generateBatchScript();
+          downloadFile(batchScript, "run_organizer.bat", "text/plain");
+        }
+      }
+
+      // 代替実行方法（ファイル生成）
+      function downloadOrganizationFiles() {
+        if (Object.keys(organizationPlan).length === 0) {
+          alert("整理計画がありません。");
+          return;
+        }
+
+        log("整理用ファイルを生成中...", "info");
+
+        // 1. カスタムPythonスクリプトを生成・ダウンロード
+        const pythonScript = generateCustomPythonScript();
+        downloadFile(pythonScript, "photo_organizer_custom.py", "text/plain");
+
+        // 2. バッチファイルを生成・ダウンロード（Windows用）
+        const batchScript = generateBatchScript();
+        downloadFile(batchScript, "run_organizer.bat", "text/plain");
+
+        // 3. CSVレポートを生成・ダウンロード
+        const csvReport = generateCSVReport();
+        downloadFile(csvReport, "organization_plan.csv", "text/csv");
+
+        // 4. 実行手順モーダルを表示
+        document.getElementById("executionModal").style.display = "block";
+
+        log("整理用ファイルがダウンロードされました", "success");
+      }
+
+      // モーダルを閉じる
+      function closeModal() {
+        document.getElementById("executionModal").style.display = "none";
+      }
+
+      // ファイルダウンロード用ヘルパー関数
+      function downloadFile(content, filename, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       }
 
       // 整理計画のダウンロード
@@ -745,7 +1043,253 @@
         log("整理計画がダウンロードされました", "success");
       }
 
-      // Pythonスクリプト生成
+      // カスタムPythonスクリプト生成（1ファイルでも既存フォルダがあれば移動）
+      function generateCustomPythonScript() {
+        let script = `#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+写真整理スクリプト - GUI版で生成（カスタム版）
+このスクリプトは写真整理ツールGUI版で生成されました。
+
+特徴:
+- 2個以上の同名ファイルがあるグループを処理
+- 1個のみのファイルでも既存フォルダと同名なら移動
+- 複数人名ファイルの自動統合
+"""
+
+import os
+import shutil
+import re
+from pathlib import Path
+
+def get_unique_filename(folder_path, filename):
+    """重複しないファイル名を生成"""
+    destination_path = folder_path / filename
+    
+    if not destination_path.exists():
+        return destination_path
+    
+    base_name = destination_path.stem
+    extension = destination_path.suffix
+    
+    # 複雑な番号パターンをすべて除去
+    clean_base_name = re.sub(r'\\s*\\(\\d+\\)(?:\\s*\\(\\d+\\))*\\s*$', '', base_name).strip()
+    
+    # フォルダ内の既存ファイルから最大番号を見つける
+    max_number = 0
+    if folder_path.exists():
+        try:
+            for existing_file in folder_path.iterdir():
+                if existing_file.is_file() and existing_file.suffix.lower() == extension.lower():
+                    existing_base = existing_file.stem
+                    if existing_base.startswith(clean_base_name):
+                        remaining = existing_base[len(clean_base_name):].strip()
+                        if remaining == '':
+                            max_number = max(max_number, 1)
+                        else:
+                            numbers = re.findall(r'\\((\\d+)\\)', remaining)
+                            if numbers:
+                                last_number = int(numbers[-1])
+                                max_number = max(max_number, last_number)
+        except Exception:
+            max_number = 1
+    
+    counter = max_number + 1
+    new_filename = f"{clean_base_name} ({counter}){extension}"
+    new_destination_path = folder_path / new_filename
+    
+    while new_destination_path.exists() and counter <= 1000:
+        counter += 1
+        new_filename = f"{clean_base_name} ({counter}){extension}"
+        new_destination_path = folder_path / new_filename
+    
+    if counter > 1000:
+        import time
+        timestamp = int(time.time())
+        new_filename = f"{clean_base_name}_{timestamp}{extension}"
+        new_destination_path = folder_path / new_filename
+    
+    return new_destination_path
+
+def organize_photos():
+    """写真ファイルを整理する"""
+    current_dir = Path('.')
+    
+    # 画像ファイルの拡張子
+    image_extensions = {
+        '.jpg', '.jpeg', '.jfif', '.jpe',
+        '.png', '.gif', '.bmp', '.tiff', '.tif',
+        '.webp', '.avif', '.heic', '.heif',
+        '.raw', '.cr2', '.nef', '.arw', '.dng',
+        '.svg', '.ico'
+    }
+    
+    # 既存フォルダを検出
+    existing_folders = set()
+    for item in current_dir.iterdir():
+        if item.is_dir() and not item.name.startswith('.') and item.name != '__pycache__':
+            existing_folders.add(item.name)
+    
+    print(f"既存フォルダ数: {len(existing_folders)}")
+    if existing_folders:
+        print(f"既存フォルダの例: {list(sorted(existing_folders))[:5]}")
+    
+    # 画像ファイルを取得
+    image_files = []
+    for file_path in current_dir.iterdir():
+        if file_path.is_file() and file_path.suffix.lower() in image_extensions:
+            image_files.append(file_path)
+    
+    print(f"見つかった画像ファイル数: {len(image_files)}")
+    
+    if len(image_files) == 0:
+        print("整理対象の画像ファイルが見つかりませんでした。")
+        return False
+    
+    # ファイル名を解析してベース名を抽出
+    base_names = {}
+    for file_path in image_files:
+        file_name = file_path.stem
+        
+        # 特殊パターンの除去
+        clean_name = re.sub(r'\\s*-\\s*コピー$', '', file_name)
+        clean_name = re.sub(r'\\s*コピー$', '', clean_name)
+        clean_name = re.sub(r'photo-\\d+\\s*\\(\\d+\\)\\s*-\\s*コピー$', '', clean_name)
+        
+        # "名前 (数字)" パターンの処理
+        match = re.match(r'^(.+?)\\s*\\((\\d+)\\)$', clean_name)
+        base_name = match.group(1).strip() if match else clean_name.strip()
+        
+        # 複数人名の処理: 既存フォルダ名で始まるかチェック
+        target_folder = None
+        for folder_name in sorted(existing_folders, key=len, reverse=True):
+            if base_name.startswith(folder_name) and len(base_name) > len(folder_name):
+                target_folder = folder_name
+                print(f"複数人名検出: '{base_name}' → '{target_folder}' フォルダに移動予定")
+                break
+        
+        final_base_name = target_folder if target_folder else base_name
+        
+        if final_base_name not in base_names:
+            base_names[final_base_name] = []
+        base_names[final_base_name].append(file_path)
+    
+    # 処理対象グループを決定
+    groups_to_process = {}
+    for base_name, files in base_names.items():
+        if len(files) > 1:
+            # 複数ファイルは常に処理対象
+            groups_to_process[base_name] = files
+            print(f"'{base_name}' フォルダ: {len(files)}個のファイル")
+        elif len(files) == 1:
+            # 1ファイルでも既存フォルダと同じ名前なら処理対象
+            if base_name in existing_folders:
+                groups_to_process[base_name] = files
+                print(f"'{base_name}' フォルダ: {len(files)}個のファイル（既存フォルダに移動）")
+            else:
+                print(f"'{base_name}': 1個のファイルのみ（スキップします）")
+    
+    if len(groups_to_process) == 0:
+        print("\\n整理対象のファイルグループがありません。")
+        return False
+    
+    total_files = sum(len(files) for files in groups_to_process.values())
+    print(f"\\n合計 {total_files} 個のファイルを {len(groups_to_process)} 個のフォルダに整理します。")
+    
+    # 実行確認
+    response = input("\\n実行しますか？ (y/n): ")
+    if response.lower() not in ['y', 'yes', 'はい']:
+        print("キャンセルされました。")
+        return False
+    
+    # ファイル移動処理
+    moved_count = 0
+    error_count = 0
+    
+    for base_name, files in groups_to_process.items():
+        print(f"\\n'{base_name}' グループを処理中...")
+        
+        # フォルダを作成
+        folder_path = current_dir / base_name
+        folder_path.mkdir(exist_ok=True)
+        
+        # ファイルを移動
+        for file_path in files:
+            try:
+                destination = get_unique_filename(folder_path, file_path.name)
+                shutil.move(str(file_path), str(destination))
+                
+                if destination.name != file_path.name:
+                    print(f"  名前変更: {file_path.name} → {destination.name}")
+                else:
+                    print(f"  移動: {file_path.name} → {base_name}/")
+                moved_count += 1
+            except Exception as e:
+                print(f"  エラー: {file_path.name} の移動に失敗 - {e}")
+                error_count += 1
+    
+    print(f"\\n=== 整理完了 ===")
+    print(f"移動成功: {moved_count} ファイル")
+    if error_count > 0:
+        print(f"移動失敗: {error_count} ファイル")
+    
+    return True
+
+if __name__ == "__main__":
+    print("=" * 50)
+    print("写真整理ツール - カスタム版")
+    print("=" * 50)
+    
+    try:
+        success = organize_photos()
+        if success:
+            print("\\n整理が完了しました！")
+        else:
+            print("\\n整理を中止しました。")
+    except KeyboardInterrupt:
+        print("\\n\\nユーザーによって中断されました。")
+    except Exception as e:
+        print(f"\\n予期しないエラーが発生しました: {e}")
+    
+    input("\\nEnterキーを押して終了...")
+`;
+
+        return script;
+      }
+
+      // バッチファイル生成（Windows用）
+      function generateBatchScript() {
+        return `@echo off
+chcp 65001 > nul
+echo ==========================================
+echo 写真整理ツール - 自動実行
+echo ==========================================
+echo.
+
+REM Pythonがインストールされているかチェック
+python --version > nul 2>&1
+if errorlevel 1 (
+    echo エラー: Pythonがインストールされていません。
+    echo https://www.python.org/ からPythonをダウンロードしてインストールしてください。
+    echo.
+    pause
+    exit /b 1
+)
+
+echo Pythonが見つかりました。
+echo 写真整理スクリプトを実行します...
+echo.
+
+REM スクリプトを実行
+python photo_organizer_custom.py
+
+echo.
+echo 実行が完了しました。
+pause
+`;
+      }
+
+      // Pythonスクリプト生成（従来版）
       function generatePythonScript() {
         let script = `#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -830,6 +1374,14 @@ if __name__ == "__main__":
       document.addEventListener("DOMContentLoaded", function () {
         log("写真整理ツール GUI版が起動しました", "info");
         log("フォルダを選択して開始してください", "info");
+
+        // モーダル外クリックで閉じる
+        window.addEventListener("click", function (event) {
+          const modal = document.getElementById("executionModal");
+          if (event.target === modal) {
+            closeModal();
+          }
+        });
       });
     </script>
   </body>
