@@ -226,7 +226,7 @@ def organize_files():
         return jsonify({'error': str(e)}), 500
 
 def get_unique_filename(folder_path, filename):
-    """重複しないファイル名を生成（シンプルなアプローチ）"""
+    """重複しないファイル名を生成（(1)から順番に連続した番号）"""
     destination_path = os.path.join(folder_path, filename)
     
     # ファイルが存在しない場合はそのまま返す
@@ -241,8 +241,8 @@ def get_unique_filename(folder_path, filename):
     # 複数の (数字) パターンを除去
     clean_base_name = re.sub(r'\s*\(\d+\)(?:\s*\(\d+\))*\s*$', '', base_name).strip()
     
-    # フォルダ内の既存ファイルから最大番号を見つける
-    max_number = 0
+    # フォルダ内の既存ファイルから使用済み番号を収集
+    used_numbers = set()
     if os.path.exists(folder_path):
         try:
             for existing_file in os.listdir(folder_path):
@@ -253,34 +253,32 @@ def get_unique_filename(folder_path, filename):
                         # 番号パターンを抽出
                         remaining = existing_base[len(clean_base_name):].strip()
                         if remaining == '':
-                            # 番号なしの同名ファイル
-                            max_number = max(max_number, 1)
+                            # 番号なしの同名ファイル（これは (1) として扱う）
+                            used_numbers.add(1)
                         else:
-                            # 番号付きファイルから最後の番号を取得
+                            # 番号付きファイルから番号を取得
                             numbers = re.findall(r'\((\d+)\)', remaining)
                             if numbers:
+                                # 最後の番号のみを使用済みとして記録
                                 last_number = int(numbers[-1])
-                                max_number = max(max_number, last_number)
+                                used_numbers.add(last_number)
         except Exception:
-            # エラーが発生した場合は安全な番号から開始
-            max_number = 1
+            # エラーが発生した場合は安全に処理
+            pass
     
-    # 新しい番号を決定
-    counter = max_number + 1
-    new_filename = f"{clean_base_name} ({counter}){extension}"
-    new_destination_path = os.path.join(folder_path, new_filename)
-    
-    # 念のため、生成したファイル名が存在しないことを確認
-    while os.path.exists(new_destination_path) and counter <= 1000:
+    # (1)から順番に空いている番号を見つける
+    counter = 1
+    while counter in used_numbers and counter <= 1000:
         counter += 1
-        new_filename = f"{clean_base_name} ({counter}){extension}"
-        new_destination_path = os.path.join(folder_path, new_filename)
     
     # 無限ループ防止
     if counter > 1000:
         import time
         timestamp = int(time.time())
         new_filename = f"{clean_base_name}_{timestamp}{extension}"
+        new_destination_path = os.path.join(folder_path, new_filename)
+    else:
+        new_filename = f"{clean_base_name} ({counter}){extension}"
         new_destination_path = os.path.join(folder_path, new_filename)
     
     return new_destination_path
