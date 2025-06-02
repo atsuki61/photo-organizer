@@ -948,6 +948,72 @@ HTML_TEMPLATE = r'''
         .error { color: #dc3545; }
         .success { color: #28a745; }
         
+        /* 保存されたパス一覧のスタイル */
+        .saved-paths-section {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+        }
+        .saved-paths-section h3 {
+            margin-bottom: 15px;
+            color: #495057;
+            font-size: 1.1em;
+        }
+        .saved-paths-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .saved-path-item {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            max-width: 300px;
+        }
+        .saved-path-item:hover {
+            background: #e9ecef;
+            border-color: #4facfe;
+            transform: translateY(-1px);
+        }
+        .saved-path-name {
+            font-weight: bold;
+            color: #495057;
+        }
+        .saved-path-path {
+            color: #6c757d;
+            font-size: 0.9em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+        .saved-path-delete {
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.7;
+            transition: opacity 0.2s ease;
+        }
+        .saved-path-delete:hover {
+            opacity: 1;
+        }
+        
         /* レスポンシブ対応 */
         @media (max-width: 768px) {
             .modal-content {
@@ -994,6 +1060,13 @@ HTML_TEMPLATE = r'''
                     複数のフォルダを同時に整理できます。パスを追加/削除してから「🔍 解析開始」をクリックしてください。
                 </p>
                 
+                <!-- 保存されたパス一覧 -->
+                <div id="savedPathsSection" class="saved-paths-section" style="margin-bottom: 20px; display: none;">
+                    <h3>💾 保存されたパス</h3>
+                    <div id="savedPathsList" class="saved-paths-list"></div>
+                    <button type="button" class="btn btn-secondary" onclick="clearAllSavedPaths()" style="margin-top: 10px;">🗑️ 全削除</button>
+                </div>
+                
                 <div id="pathInputs">
                     <div class="path-input-group" data-index="0">
                         <div class="form-group">
@@ -1001,10 +1074,11 @@ HTML_TEMPLATE = r'''
                             <div style="display: flex; gap: 10px; align-items: center;">
                                 <input type="text" id="directoryPath0" class="directory-path" placeholder="例: C:/Users/YourName/Pictures" style="flex: 1;">
                                 <button type="button" class="btn btn-warning folder-select-btn" data-target="directoryPath0">📁</button>
+                                <button type="button" class="btn btn-info" onclick="saveCurrentPath(0)">💾</button>
                                 <button type="button" class="btn btn-secondary remove-path-btn" onclick="removePath(0)" style="display: none;">❌</button>
                             </div>
                             <small style="color: #666; margin-top: 5px; display: block;">
-                                💡 「📁」ボタンでフォルダを選択してパスを簡単に入力できます
+                                💡 「📁」でフォルダ選択、「💾」でパス保存、保存済みパスをクリックで呼び出し
                             </small>
                         </div>
                         <div class="selected-folder" id="selectedFolder0" style="display: none;">
@@ -1091,7 +1165,14 @@ HTML_TEMPLATE = r'''
                                         <h4>📋 パスの取得方法</h4>
                     <p><strong>1.</strong> 「📁 フォルダ選択」ボタンをクリック</p>
                     <p><strong>2.</strong> フォルダを開き、アドレスバーを右クリック「アドレスをテキストとしてコピー」</p>
-                    <p><strong>3.</strong> コピーしたパスを入力欄に貼り付け</p>                    
+                    <p><strong>3.</strong> コピーしたパスを入力欄に貼り付け</p>
+                    
+                    <h4>💾 パス記憶機能</h4>
+                    <p><strong>パス保存：</strong> 「💾」ボタンをクリックして頻繁に使うパスを保存</p>
+                    <p><strong>パス呼び出し：</strong> 保存済みパスをクリックして簡単に入力</p>
+                    <p><strong>パス管理：</strong> 保存済みパスの「×」ボタンで個別削除、「🗑️ 全削除」で一括削除</p>
+                    <p><strong>自動命名：</strong> パス保存時にフォルダ名を自動提案、カスタム名も設定可能</p>
+                    
                     <h4>💡 パス入力例</h4>
                     <p><code>C:\Users\YourName\Pictures\写真フォルダ</code></p>
                     <p><code>D:\Photos\2024年\家族写真</code></p>
@@ -1302,10 +1383,11 @@ HTML_TEMPLATE = r'''
                     <div style="display: flex; gap: 10px; align-items: center;">
                         <input type="text" id="directoryPath${newIndex}" class="directory-path" placeholder="例: C:/Users/YourName/Pictures" style="flex: 1;">
                         <button type="button" class="btn btn-warning folder-select-btn" data-target="directoryPath${newIndex}">📁</button>
+                        <button type="button" class="btn btn-info" onclick="saveCurrentPath(${newIndex})">💾</button>
                         <button type="button" class="btn btn-secondary remove-path-btn" onclick="removePath(${newIndex})">❌</button>
                     </div>
                     <small style="color: #666; margin-top: 5px; display: block;">
-                        💡 「📁」ボタンでフォルダを選択してパスを簡単に入力できます
+                        💡 「📁」でフォルダ選択、「💾」でパス保存、保存済みパスをクリックで呼び出し
                     </small>
                 </div>
                 <div class="selected-folder" id="selectedFolder${newIndex}" style="display: none;">
@@ -1520,7 +1602,186 @@ HTML_TEMPLATE = r'''
         // 初期化
         preventFileUpload();
         updateRemoveButtons(); // 削除ボタンの初期状態を設定
+        loadSavedPaths(); // 保存されたパスを読み込み
         log('写真整理ツール Webアプリ版が起動しました（複数フォルダ対応）', 'info');
+        
+        // === パス記憶機能 ===
+        
+        // 保存されたパスを読み込み
+        function loadSavedPaths() {
+            try {
+                const savedPaths = JSON.parse(localStorage.getItem('photoOrganizerPaths') || '[]');
+                displaySavedPaths(savedPaths);
+            } catch (error) {
+                console.error('保存されたパスの読み込みエラー:', error);
+                localStorage.removeItem('photoOrganizerPaths');
+            }
+        }
+        
+        // 保存されたパスを表示
+        function displaySavedPaths(savedPaths) {
+            const savedPathsSection = document.getElementById('savedPathsSection');
+            const savedPathsList = document.getElementById('savedPathsList');
+            
+            if (savedPaths.length === 0) {
+                savedPathsSection.style.display = 'none';
+                return;
+            }
+            
+            savedPathsSection.style.display = 'block';
+            savedPathsList.innerHTML = '';
+            
+            savedPaths.forEach((pathData, index) => {
+                const pathItem = document.createElement('div');
+                pathItem.className = 'saved-path-item';
+                pathItem.innerHTML = `
+                    <div class="saved-path-name">${pathData.name}</div>
+                    <div class="saved-path-path" title="${pathData.path}">${pathData.path}</div>
+                    <button class="saved-path-delete" onclick="deleteSavedPath(${index})" title="削除">×</button>
+                `;
+                
+                // パス部分をクリックしたときに呼び出し
+                pathItem.addEventListener('click', function(e) {
+                    if (!e.target.classList.contains('saved-path-delete')) {
+                        callSavedPath(pathData.path);
+                    }
+                });
+                
+                savedPathsList.appendChild(pathItem);
+            });
+        }
+        
+        // 現在のパスを保存
+        function saveCurrentPath(inputIndex) {
+            const pathInput = document.getElementById(`directoryPath${inputIndex}`);
+            const path = pathInput.value.trim();
+            
+            if (!path) {
+                alert('パスが入力されていません');
+                return;
+            }
+            
+            // パス名の入力を促す
+            const pathName = prompt(`パスに名前を付けてください:\n\n${path}`, getDefaultPathName(path));
+            
+            if (pathName === null) {
+                return; // キャンセル
+            }
+            
+            if (!pathName.trim()) {
+                alert('名前を入力してください');
+                return;
+            }
+            
+            // 保存済みパスを取得
+            let savedPaths = [];
+            try {
+                savedPaths = JSON.parse(localStorage.getItem('photoOrganizerPaths') || '[]');
+            } catch (error) {
+                console.error('保存されたパスの読み込みエラー:', error);
+                savedPaths = [];
+            }
+            
+            // 同じパスが既に存在するかチェック
+            const existingIndex = savedPaths.findIndex(p => p.path === path);
+            if (existingIndex !== -1) {
+                if (confirm(`このパスは既に「${savedPaths[existingIndex].name}」として保存されています。\n上書きしますか？`)) {
+                    savedPaths[existingIndex].name = pathName.trim();
+                } else {
+                    return;
+                }
+            } else {
+                // 新規追加
+                savedPaths.push({
+                    name: pathName.trim(),
+                    path: path,
+                    savedAt: new Date().toISOString()
+                });
+            }
+            
+            // localStorage に保存
+            try {
+                localStorage.setItem('photoOrganizerPaths', JSON.stringify(savedPaths));
+                displaySavedPaths(savedPaths);
+                log(`パスを保存しました: ${pathName.trim()}`, 'success');
+            } catch (error) {
+                console.error('パス保存エラー:', error);
+                alert('パスの保存に失敗しました。ストレージ容量を確認してください。');
+            }
+        }
+        
+        // デフォルトのパス名を生成
+        function getDefaultPathName(path) {
+            // パスの最後のフォルダ名を取得
+            const pathParts = path.replace(/\\/g, '/').split('/');
+            const folderName = pathParts[pathParts.length - 1] || pathParts[pathParts.length - 2] || 'フォルダ';
+            return folderName;
+        }
+        
+        // 保存されたパスを呼び出し
+        function callSavedPath(path) {
+            // 現在アクティブな（空の）入力欄を探す
+            const pathInputs = document.querySelectorAll('.directory-path');
+            let targetInput = null;
+            
+            for (let input of pathInputs) {
+                if (!input.value.trim()) {
+                    targetInput = input;
+                    break;
+                }
+            }
+            
+            // 空の入力欄がない場合は新しく追加
+            if (!targetInput) {
+                addPath();
+                // 新しく追加された入力欄を取得
+                const newInputs = document.querySelectorAll('.directory-path');
+                targetInput = newInputs[newInputs.length - 1];
+            }
+            
+            if (targetInput) {
+                targetInput.value = path;
+                targetInput.focus();
+                log(`保存されたパスを呼び出しました: ${path}`, 'success');
+            }
+        }
+        
+        // 保存されたパスを削除
+        function deleteSavedPath(index) {
+            try {
+                let savedPaths = JSON.parse(localStorage.getItem('photoOrganizerPaths') || '[]');
+                
+                if (index < 0 || index >= savedPaths.length) {
+                    return;
+                }
+                
+                const pathName = savedPaths[index].name;
+                
+                if (confirm(`「${pathName}」を削除しますか？`)) {
+                    savedPaths.splice(index, 1);
+                    localStorage.setItem('photoOrganizerPaths', JSON.stringify(savedPaths));
+                    displaySavedPaths(savedPaths);
+                    log(`保存されたパスを削除しました: ${pathName}`, 'info');
+                }
+            } catch (error) {
+                console.error('パス削除エラー:', error);
+                alert('パスの削除に失敗しました');
+            }
+        }
+        
+        // 全ての保存されたパスを削除
+        function clearAllSavedPaths() {
+            if (confirm('保存されたパスを全て削除しますか？\nこの操作は取り消せません。')) {
+                try {
+                    localStorage.removeItem('photoOrganizerPaths');
+                    displaySavedPaths([]);
+                    log('保存されたパスを全て削除しました', 'info');
+                } catch (error) {
+                    console.error('パス全削除エラー:', error);
+                    alert('パスの削除に失敗しました');
+                }
+            }
+        }
     </script>
 </body>
 </html>
