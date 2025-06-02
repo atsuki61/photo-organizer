@@ -7,6 +7,8 @@
 - **自動グループ化**: 同じ名前の写真ファイル（例：`犬.jpg`, `犬 (1).jpg`, `犬 (2).png`）を一つのフォルダにまとめます
 - **1 ファイルスキップ**: 1 個のみのファイルはそのまま残し、2 個以上の同名ファイルがある場合のみフォルダに整理します
 - **複数動物名対応**: `いぬねこ.jpg` のような複数動物名のファイルを、先頭の名前（`いぬ`）のフォルダに移動します
+- **厳密な名前判定**: `桜.jpg`、`桜井.jpg`、`桜田.jpg` のような似た名前を正しく区別して整理します
+- **統合処理の制御**: `--no-merge` オプションで複数人名の統合処理を無効化できます
 - **特殊パターン処理**: 「コピー」や「photo-1」などの特殊な命名パターンにも対応
 - **重複ファイル処理**: 同名ファイルが既に存在する場合、自動的に名前を変更します
 - **多様な画像形式**: JPG、PNG、GIF、BMP、TIFF、WebP、RAW、CR2、NEF などに対応
@@ -30,6 +32,12 @@ python photo_organizer.py
 
 # 指定したディレクトリを整理
 python photo_organizer.py "C:\Users\YourName\Pictures"
+
+# 複数人名の統合を無効化して整理（推奨）
+python photo_organizer.py --no-merge
+
+# 指定ディレクトリで複数人名統合を無効化
+python photo_organizer.py --no-merge "C:\Users\YourName\Pictures"
 
 # ヘルプを表示
 python photo_organizer.py --help
@@ -241,6 +249,12 @@ python photo_organizer.py
 # 指定したディレクトリを整理
 python photo_organizer.py "C:\Users\YourName\Pictures"
 
+# 複数人名統合を無効化（安全な整理）
+python photo_organizer.py --no-merge
+
+# 指定ディレクトリで複数人名統合を無効化
+python photo_organizer.py --no-merge "C:\Users\YourName\Pictures"
+
 # ヘルプを表示
 python photo_organizer.py --help
 
@@ -251,7 +265,12 @@ python photo_organizer.py --version
 #### バッチ処理例
 
 ```bash
-# 複数フォルダの一括処理
+# 複数フォルダの一括処理（安全モード）
+python photo_organizer.py --no-merge "C:\Photos\2023"
+python photo_organizer.py --no-merge "C:\Photos\2024"
+python photo_organizer.py --no-merge "C:\Photos\2025"
+
+# 従来の処理（複数人名統合あり）
 python photo_organizer.py "C:\Photos\2023"
 python photo_organizer.py "C:\Photos\2024"
 python photo_organizer.py "C:\Photos\2025"
@@ -315,7 +334,48 @@ python photo_organizer_standalone.py
     └── いぬうさぎ.jpg    ← 自動的にいぬフォルダに移動
 ```
 
-### 例 3: 重複ファイル名の処理
+### 例 3: 厳密な名前判定の改善（NEW!）
+
+**従来の問題（改善前）**
+
+```
+📁 写真フォルダ/
+├── 桜.jpg
+├── 桜井.jpg    ← 間違って「桜」フォルダに統合されてしまう
+└── 桜田.jpg          ← 間違って「桜」フォルダに統合されてしまう
+```
+
+**改善後の正しい整理**
+
+```bash
+# デフォルト（厳密な判定）
+python photo_organizer.py
+
+# または、統合処理を完全無効化（推奨）
+python photo_organizer.py --no-merge
+```
+
+```
+📁 写真フォルダ/
+├── 📁 桜/
+│   └── 桜.jpg
+├── 📁 桜井/    ← 正しく独立したフォルダに整理
+│   └── 桜井.jpg
+└── 📁 桜田/          ← 正しく独立したフォルダに整理
+    └── 桜田.jpg
+```
+
+**安全な運用方法**
+
+```bash
+# 複数人名統合を無効化（最も安全）
+python photo_organizer.py --no-merge
+
+# 既存フォルダがある場合の安全確認
+python photo_organizer.py --no-merge "C:\Photos"
+```
+
+### 例 4: 重複ファイル名の処理
 
 **同名ファイルが既に存在する場合**
 
@@ -343,7 +403,10 @@ cd test_photos
 # 2. テスト用ファイルをコピー
 # （重要な写真の前に、不要なファイルでテスト）
 
-# 3. 写真整理ツールを実行
+# 3. 写真整理ツールを実行（推奨：安全モード）
+python photo_organizer.py --no-merge
+
+# または、従来の方法
 python photo_organizer.py
 
 # 4. 結果を確認してから本番実行

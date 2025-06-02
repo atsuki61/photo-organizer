@@ -21,12 +21,13 @@ import re
 from pathlib import Path
 import argparse
 
-def organize_photos(target_dir=None):
+def organize_photos(target_dir=None, disable_merge=False):
     """
     写真ファイルを整理する関数
     
     Args:
         target_dir (str): 整理対象のディレクトリパス。Noneの場合は現在のディレクトリ
+        disable_merge (bool): 複数人名の統合処理を無効化するかどうか
     """
     
     # 対象ディレクトリを決定
@@ -94,14 +95,36 @@ def organize_photos(target_dir=None):
             # パターン2: 数字が付いていない場合
             base_name = clean_name.strip()
         
-        # 複数人名の処理: 既存フォルダ名で始まるかチェック
+        # 複数人名の処理: より厳密な条件でチェック
         target_folder = None
-        # 長い名前から順にチェック（より具体的なマッチを優先）
-        for folder_name in sorted(existing_folders, key=len, reverse=True):
-            if base_name.startswith(folder_name) and len(base_name) > len(folder_name):
-                target_folder = folder_name
-                print(f"複数人名検出: '{base_name}' → '{target_folder}' フォルダに移動予定")
-                break
+        
+        # disable_mergeオプションが有効でない場合のみ複数人名処理を実行
+        if not disable_merge:
+            # 長い名前から順にチェック（より具体的なマッチを優先）
+            for folder_name in sorted(existing_folders, key=len, reverse=True):
+                # より厳密な条件：
+                # 1. base_nameがfolder_nameで始まる
+                # 2. base_nameがfolder_nameより長い
+                # 3. folder_nameの後の文字が特定のパターン（ひらがな、カタカナ、漢字）
+                # 4. folder_nameが短すぎない（最低2文字以上）
+                if (base_name.startswith(folder_name) and 
+                    len(base_name) > len(folder_name) and
+                    len(folder_name) >= 2):
+                    
+                    # folder_nameの後の文字をチェック
+                    remaining_part = base_name[len(folder_name):]
+                    
+                    # 複数人名として認識する条件：
+                    # - 残りの部分がひらがな・カタカナ・漢字のみで構成されている
+                    # - かつ、残りの部分が人名らしい（1文字以上）
+                    if (re.match(r'^[ぁ-んァ-ン一-龯]+$', remaining_part) and
+                        len(remaining_part) >= 1 and
+                        # 「桜井」「桜田」のような明らかに別の苗字は除外
+                        not re.match(r'^[井田山田中村松本佐藤高橋鈴木渡辺加藤]', remaining_part)):
+                        
+                        target_folder = folder_name
+                        print(f"複数人名検出: '{base_name}' → '{target_folder}' フォルダに移動予定")
+                        break
         
         # 移動先フォルダを決定
         if target_folder:
@@ -208,6 +231,12 @@ def main():
     )
     
     parser.add_argument(
+        '--no-merge',
+        action='store_true',
+        help='複数人名の統合処理を無効化（例：「桜井日奈子」を「桜」フォルダに統合しない）'
+    )
+    
+    parser.add_argument(
         '--version',
         action='version',
         version='Photo Organizer 2.0'
@@ -220,7 +249,7 @@ def main():
     print("=" * 50)
     
     try:
-        success = organize_photos(args.directory)
+        success = organize_photos(args.directory, args.no_merge)
         if success:
             print("\n整理が完了しました！")
         else:
