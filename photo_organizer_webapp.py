@@ -35,13 +35,27 @@ def index():
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze_directory():
-    """ディレクトリを解析"""
+    """複数ディレクトリを解析"""
     try:
         data = request.get_json()
-        directory_path = data.get('directory_path', '')
+        directory_paths = data.get('directory_paths', [])
         
-        if not directory_path or not os.path.exists(directory_path):
-            return jsonify({'error': '指定されたディレクトリが存在しません'}), 400
+        # 空のパスを除外
+        directory_paths = [path.strip() for path in directory_paths if path and path.strip()]
+        
+        if not directory_paths:
+            return jsonify({'error': '有効なディレクトリパスが入力されていません'}), 400
+        
+        # 存在しないディレクトリをチェック
+        invalid_paths = []
+        for path in directory_paths:
+            if not os.path.exists(path):
+                invalid_paths.append(path)
+        
+        if invalid_paths:
+            return jsonify({
+                'error': f'次のディレクトリが存在しません: {", ".join(invalid_paths)}'
+            }), 400
         
         # 画像ファイルを検索
         image_extensions = {
@@ -51,37 +65,52 @@ def analyze_directory():
             '.raw', '.cr2', '.nef', '.arw', '.dng',  # RAW形式
             '.svg', '.ico'  # その他
         }
-        image_files = []
         
-        for root, dirs, files in os.walk(directory_path):
-            for file in files:
-                if Path(file).suffix.lower() in image_extensions:
-                    image_files.append({
-                        'name': file,
-                        'path': os.path.join(root, file),
-                        'relative_path': os.path.relpath(os.path.join(root, file), directory_path)
-                    })
+        all_image_files = []
+        directory_results = {}
         
-        # ファイルをグループ化
-        groups = analyze_file_groups(image_files)
+        for directory_path in directory_paths:
+            image_files = []
+            
+            for root, dirs, files in os.walk(directory_path):
+                for file in files:
+                    if Path(file).suffix.lower() in image_extensions:
+                        image_files.append({
+                            'name': file,
+                            'path': os.path.join(root, file),
+                            'relative_path': os.path.relpath(os.path.join(root, file), directory_path),
+                            'source_directory': directory_path
+                        })
+            
+            all_image_files.extend(image_files)
+            directory_results[directory_path] = {
+                'file_count': len(image_files),
+                'files': image_files
+            }
         
-        # 既存フォルダを検出
-        existing_folders = set()
-        for item in os.listdir(directory_path):
-            item_path = os.path.join(directory_path, item)
-            if os.path.isdir(item_path) and not item.startswith('.'):
-                existing_folders.add(item)
+        # 全ファイルをまとめてグループ化
+        groups = analyze_file_groups(all_image_files)
+        
+        # 全ディレクトリの既存フォルダを収集
+        all_existing_folders = set()
+        for directory_path in directory_paths:
+            for item in os.listdir(directory_path):
+                item_path = os.path.join(directory_path, item)
+                if os.path.isdir(item_path) and not item.startswith('.'):
+                    all_existing_folders.add(item)
         
         # デバッグ情報を出力
-        print(f"解析結果:")
-        print(f"  - 既存フォルダ: {existing_folders}")
+        print(f"複数フォルダ解析結果:")
+        print(f"  - 対象ディレクトリ: {directory_paths}")
+        print(f"  - 総ファイル数: {len(all_image_files)}")
+        print(f"  - 既存フォルダ: {all_existing_folders}")
         print(f"  - 検出されたグループ: {list(groups.keys())}")
         for name, files in groups.items():
             if len(files) > 1:
                 print(f"    複数ファイルグループ '{name}': {len(files)}ファイル")
         
         # まず複数人名ファイルを統合（1ファイルでも統合対象になる）
-        groups_after_merge = merge_multiple_names(groups, existing_folders)
+        groups_after_merge = merge_multiple_names(groups, all_existing_folders)
         
         # 1ファイルでも既存フォルダと同じ名前なら処理対象に含める
         processed_groups = {}
@@ -93,7 +122,7 @@ def analyze_directory():
                 processed_groups[name] = files
             elif len(files) == 1:
                 # 1ファイルでも既存フォルダと同じ名前なら処理対象に含める
-                if name in existing_folders:
+                if name in all_existing_folders:
                     processed_groups[name] = files
                     print(f"1ファイルグループ '{name}' を既存フォルダに移動対象として追加")
                 else:
@@ -102,21 +131,29 @@ def analyze_directory():
         # 結果を保存
         global current_analysis
         current_analysis = {
-            'directory_path': directory_path,
+            'directory_paths': directory_paths,
             'groups': processed_groups,
             'single_file_groups': single_file_groups,
-            'total_files': len(image_files),
-            'existing_folders': list(existing_folders)
+            'total_files': len(all_image_files),
+            'existing_folders': list(all_existing_folders),
+            'directory_results': directory_results
         }
         
         return jsonify({
             'success': True,
-            'total_files': len(image_files),
+            'total_files': len(all_image_files),
             'total_groups': len(processed_groups),
             'groups': {name: len(files) for name, files in processed_groups.items()},
             'skipped_single_files': len(single_file_groups),
             'single_file_examples': list(single_file_groups.keys())[:10],
-            'existing_folders': list(existing_folders)
+            'existing_folders': list(all_existing_folders),
+            'directory_count': len(directory_paths),
+            'directory_summary': [
+                {
+                    'path': path,
+                    'file_count': result['file_count']
+                } for path, result in directory_results.items()
+            ]
         })
         
     except Exception as e:
@@ -147,12 +184,12 @@ def get_preview():
 
 @app.route('/api/organize', methods=['POST'])
 def organize_files():
-    """実際にファイルを整理"""
+    """複数ディレクトリのファイルを実際に整理"""
     try:
         if not current_analysis:
             return jsonify({'error': '先にディレクトリを解析してください'}), 400
         
-        directory_path = current_analysis['directory_path']
+        directory_paths = current_analysis['directory_paths']
         groups = current_analysis['groups']
         
         results = {
@@ -161,60 +198,92 @@ def organize_files():
             'errors': []
         }
         
+        # 各グループについて処理
         for folder_name, files in groups.items():
-            # フォルダを作成（既存の場合はスキップ）
-            folder_path = os.path.join(directory_path, folder_name)
-            folder_existed = os.path.exists(folder_path)
-            
-            try:
-                os.makedirs(folder_path, exist_ok=True)
-                if not folder_existed:
-                    results['created_folders'] += 1
-            except Exception as e:
-                results['errors'].append(f"フォルダ作成エラー '{folder_name}': {str(e)}")
-                continue
-            
-            # ファイルを移動
+            # ファイルの元ディレクトリごとにグループ化
+            files_by_directory = {}
             for file_info in files:
+                source_dir = file_info['source_directory']
+                if source_dir not in files_by_directory:
+                    files_by_directory[source_dir] = []
+                files_by_directory[source_dir].append(file_info)
+            
+            # 各ディレクトリでフォルダを作成し、ファイルを移動
+            for source_directory, dir_files in files_by_directory.items():
+                # フォルダを作成（既存の場合はスキップ）
+                folder_path = os.path.join(source_directory, folder_name)
+                folder_existed = os.path.exists(folder_path)
+                
                 try:
-                    source_path = file_info['path']
-                    
-                    # 移動元ファイルが存在するかチェック
-                    if not os.path.exists(source_path):
-                        results['errors'].append(f"移動元ファイルが見つかりません: {file_info['name']}")
-                        continue
-                    
-                    # 移動先のファイル名を決定（重複回避）
-                    destination_path = get_unique_filename(folder_path, file_info['name'])
-                    
-                    # ファイルを移動
-                    try:
-                        shutil.move(source_path, destination_path)
-                        results['moved_files'] += 1
-                        
-                        # リネームされた場合のみログに記録（情報として）
-                        original_name = file_info['name']
-                        new_name = os.path.basename(destination_path)
-                        if original_name != new_name:
-                            # エラーではなく情報として記録
-                            print(f"リネーム: {original_name} → {new_name}")
-                    
-                    except PermissionError:
-                        results['errors'].append(f"アクセス権限エラー: {file_info['name']}")
-                    except FileExistsError:
-                        results['errors'].append(f"ファイル既存エラー: {file_info['name']}")
-                    except OSError as e:
-                        results['errors'].append(f"OS エラー: {file_info['name']} - {str(e)}")
-                    
+                    os.makedirs(folder_path, exist_ok=True)
+                    if not folder_existed:
+                        results['created_folders'] += 1
+                        print(f"フォルダを作成: {folder_path}")
                 except Exception as e:
-                    results['errors'].append(f"予期しないエラー: {file_info['name']} - {str(e)}")
+                    error_msg = f"フォルダ作成エラー '{folder_name}' in {source_directory}: {str(e)}"
+                    results['errors'].append(error_msg)
+                    print(error_msg)
+                    continue
+                
+                # ファイルを移動
+                for file_info in dir_files:
+                    try:
+                        source_path = file_info['path']
+                        
+                        # 移動元ファイルが存在するかチェック
+                        if not os.path.exists(source_path):
+                            error_msg = f"移動元ファイルが見つかりません: {file_info['name']} in {source_directory}"
+                            results['errors'].append(error_msg)
+                            print(error_msg)
+                            continue
+                        
+                        # 移動先のファイル名を決定（重複回避）
+                        destination_path = get_unique_filename(folder_path, file_info['name'])
+                        
+                        # ファイルを移動
+                        try:
+                            shutil.move(source_path, destination_path)
+                            results['moved_files'] += 1
+                            
+                            # リネームされた場合のみログに記録（情報として）
+                            original_name = file_info['name']
+                            new_name = os.path.basename(destination_path)
+                            if original_name != new_name:
+                                # エラーではなく情報として記録
+                                print(f"リネーム: {original_name} → {new_name} in {folder_path}")
+                            else:
+                                print(f"移動: {original_name} → {folder_path}")
+                            
+                        except PermissionError as e:
+                            error_msg = f"ファイル移動権限エラー '{file_info['name']}': {str(e)}"
+                            results['errors'].append(error_msg)
+                            print(error_msg)
+                        except OSError as e:
+                            error_msg = f"ファイル移動OSエラー '{file_info['name']}': {str(e)}"
+                            results['errors'].append(error_msg)
+                            print(error_msg)
+                        except Exception as e:
+                            error_msg = f"ファイル移動エラー '{file_info['name']}': {str(e)}"
+                            results['errors'].append(error_msg)
+                            print(error_msg)
+                    
+                    except Exception as e:
+                        error_msg = f"ファイル処理エラー '{file_info['name']}': {str(e)}"
+                        results['errors'].append(error_msg)
+                        print(error_msg)
         
-        # デバッグ情報を追加
+        # デバッグ情報
         debug_info = {
             'total_groups': len(groups),
             'total_files_in_groups': sum(len(files) for files in groups.values()),
-            'groups_processed': list(groups.keys())
+            'directories_processed': len(directory_paths)
         }
+        
+        print(f"整理完了:")
+        print(f"  - 処理ディレクトリ数: {debug_info['directories_processed']}")
+        print(f"  - 移動ファイル数: {results['moved_files']}")
+        print(f"  - 作成フォルダ数: {results['created_folders']}")
+        print(f"  - エラー数: {len(results['errors'])}")
         
         return jsonify({
             'success': True,
@@ -921,25 +990,38 @@ HTML_TEMPLATE = r'''
         <div class="main-content">
             <div class="section">
                 <h2>📁 ディレクトリを指定</h2>
-                <div class="form-group">
-                    <label for="directoryPath">整理したい写真フォルダのパス:</label>
-                    <input type="text" id="directoryPath" placeholder="例: C:/Users/YourName/Pictures">
-                    <small style="color: #666; margin-top: 5px; display: block;">
-                        💡 「📁 フォルダ選択」ボタンを使うと、フォルダを選択してパスを簡単に入力できます
-                    </small>
-                </div>
-                <div class="btn-group">
-                    <button class="btn btn-primary" onclick="analyzeDirectory()">🔍 解析開始</button>
-                    <div class="file-input-wrapper">
-                        <input type="file" id="folderInput" class="file-input" webkitdirectory multiple accept="image/*" onchange="return false;">
-                        <button class="btn btn-warning">📁 フォルダ選択</button>
+                <p style="margin-bottom: 20px; color: #666;">
+                    複数のフォルダを同時に整理できます。パスを追加/削除してから「🔍 解析開始」をクリックしてください。
+                </p>
+                
+                <div id="pathInputs">
+                    <div class="path-input-group" data-index="0">
+                        <div class="form-group">
+                            <label for="directoryPath0">フォルダ 1 のパス:</label>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <input type="text" id="directoryPath0" class="directory-path" placeholder="例: C:/Users/YourName/Pictures" style="flex: 1;">
+                                <button type="button" class="btn btn-warning folder-select-btn" data-target="directoryPath0">📁</button>
+                                <button type="button" class="btn btn-secondary remove-path-btn" onclick="removePath(0)" style="display: none;">❌</button>
+                            </div>
+                            <small style="color: #666; margin-top: 5px; display: block;">
+                                💡 「📁」ボタンでフォルダを選択してパスを簡単に入力できます
+                            </small>
+                        </div>
+                        <div class="selected-folder" id="selectedFolder0" style="display: none;">
+                            <strong>選択されたフォルダ:</strong> <span class="selected-folder-path"></span>
+                            <br><small style="color: #666;">フォルダ選択後、完全なパスを入力してください</small>
+                        </div>
                     </div>
+                </div>
+                
+                <div class="btn-group" style="margin-top: 15px;">
+                    <button class="btn btn-success" onclick="addPath()">➕ フォルダを追加</button>
+                    <button class="btn btn-primary" onclick="analyzeDirectories()">🔍 解析開始</button>
                     <button class="btn btn-info" onclick="showUsageModal()">❓ 使い方</button>
                 </div>
-                <div id="selectedFolder" class="selected-folder">
-                    <strong>選択されたフォルダ:</strong> <span id="selectedFolderPath"></span>
-                    <br><small style="color: #666;">フォルダ選択後、完全なパスを入力してください</small>
-                </div>
+                
+                <!-- 隠しファイル入力（フォルダ選択用） -->
+                <input type="file" id="folderInput" style="display: none;" webkitdirectory multiple accept="image/*">
             </div>
             
             <div id="statsSection" class="hidden">
@@ -1053,20 +1135,28 @@ HTML_TEMPLATE = r'''
             logSection.scrollTop = logSection.scrollHeight;
         }
 
-        async function analyzeDirectory() {
-            const directoryPath = document.getElementById('directoryPath').value;
-            if (!directoryPath) {
-                alert('ディレクトリパスを入力してください');
+        async function analyzeDirectories() {
+            const directoryPaths = Array.from(document.querySelectorAll('.directory-path'))
+                .map(input => input.value.trim())
+                .filter(path => path.length > 0);
+            
+            if (directoryPaths.length === 0) {
+                alert('少なくとも1つのディレクトリパスを入力してください');
                 return;
             }
 
-            log('ディレクトリを解析中...', 'info');
+            log(`${directoryPaths.length}個のディレクトリを解析中...`, 'info');
+            
+            // 入力されたディレクトリをログに表示
+            directoryPaths.forEach((path, index) => {
+                log(`フォルダ ${index + 1}: ${path}`, 'info');
+            });
 
             try {
                 const response = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ directory_path: directoryPath })
+                    body: JSON.stringify({ directory_paths: directoryPaths })
                 });
 
                 const data = await response.json();
@@ -1077,7 +1167,15 @@ HTML_TEMPLATE = r'''
                     document.getElementById('skippedFiles').textContent = data.skipped_single_files || 0;
                     document.getElementById('statsSection').classList.remove('hidden');
                     
-                    log(`解析完了: ${data.total_files}ファイル、${data.total_groups}グループ、${data.skipped_single_files || 0}ファイルスキップ`, 'success');
+                    // 複数フォルダの詳細情報をログに表示
+                    log(`解析完了: ${data.directory_count}フォルダ、${data.total_files}ファイル、${data.total_groups}グループ、${data.skipped_single_files || 0}ファイルスキップ`, 'success');
+                    
+                    // 各ディレクトリの詳細
+                    if (data.directory_summary) {
+                        data.directory_summary.forEach((dir, index) => {
+                            log(`  - フォルダ ${index + 1}: ${dir.file_count}ファイル`, 'info');
+                        });
+                    }
                     
                     if (data.single_file_examples && data.single_file_examples.length > 0) {
                         log(`スキップ例: ${data.single_file_examples.slice(0, 5).join(', ')}`, 'info');
@@ -1178,7 +1276,72 @@ HTML_TEMPLATE = r'''
             }
         }
 
-        // フォルダ選択機能
+        // フォルダ選択機能（複数対応）
+        let currentTargetInput = null;
+        
+        // フォルダ選択ボタンのイベントリスナー
+        document.addEventListener('click', function(event) {
+            if (event.target.classList.contains('folder-select-btn')) {
+                currentTargetInput = event.target.getAttribute('data-target');
+                document.getElementById('folderInput').click();
+            }
+        });
+        
+        // パス追加機能
+        function addPath() {
+            const pathInputs = document.getElementById('pathInputs');
+            const currentCount = pathInputs.children.length;
+            const newIndex = currentCount;
+            
+            const newPathGroup = document.createElement('div');
+            newPathGroup.className = 'path-input-group';
+            newPathGroup.setAttribute('data-index', newIndex);
+            newPathGroup.innerHTML = `
+                <div class="form-group">
+                    <label for="directoryPath${newIndex}">フォルダ ${newIndex + 1} のパス:</label>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" id="directoryPath${newIndex}" class="directory-path" placeholder="例: C:/Users/YourName/Pictures" style="flex: 1;">
+                        <button type="button" class="btn btn-warning folder-select-btn" data-target="directoryPath${newIndex}">📁</button>
+                        <button type="button" class="btn btn-secondary remove-path-btn" onclick="removePath(${newIndex})">❌</button>
+                    </div>
+                    <small style="color: #666; margin-top: 5px; display: block;">
+                        💡 「📁」ボタンでフォルダを選択してパスを簡単に入力できます
+                    </small>
+                </div>
+                <div class="selected-folder" id="selectedFolder${newIndex}" style="display: none;">
+                    <strong>選択されたフォルダ:</strong> <span class="selected-folder-path"></span>
+                    <br><small style="color: #666;">フォルダ選択後、完全なパスを入力してください</small>
+                </div>
+            `;
+            
+            pathInputs.appendChild(newPathGroup);
+            updateRemoveButtons();
+            log(`フォルダ ${newIndex + 1} の入力欄を追加しました`, 'info');
+        }
+        
+        // パス削除機能
+        function removePath(index) {
+            const pathGroup = document.querySelector(`[data-index="${index}"]`);
+            if (pathGroup) {
+                pathGroup.remove();
+                updateRemoveButtons();
+                log(`フォルダ ${index + 1} の入力欄を削除しました`, 'info');
+            }
+        }
+        
+        // 削除ボタンの表示/非表示を更新
+        function updateRemoveButtons() {
+            const pathGroups = document.querySelectorAll('.path-input-group');
+            pathGroups.forEach((group, index) => {
+                const removeBtn = group.querySelector('.remove-path-btn');
+                if (pathGroups.length > 1) {
+                    removeBtn.style.display = 'inline-block';
+                } else {
+                    removeBtn.style.display = 'none';
+                }
+            });
+        }
+        
         document.getElementById('folderInput').addEventListener('change', async function(event) {
             // アップロード確認ダイアログを防ぐ
             event.preventDefault();
@@ -1190,7 +1353,8 @@ HTML_TEMPLATE = r'''
             setTimeout(() => {
                 document.getElementById('folderInput').value = '';
             }, 0);
-            if (files.length > 0) {
+            
+            if (files.length > 0 && currentTargetInput) {
                 log('フォルダパスを取得中...', 'info');
                 
                 try {
@@ -1216,6 +1380,11 @@ HTML_TEMPLATE = r'''
                     const data = await response.json();
                     
                     if (data.success) {
+                        const targetInput = document.getElementById(currentTargetInput);
+                        const targetIndex = currentTargetInput.replace('directoryPath', '');
+                        const selectedFolderDiv = document.getElementById('selectedFolder' + targetIndex);
+                        const selectedFolderSpan = selectedFolderDiv.querySelector('.selected-folder-path');
+                        
                         if (data.requires_manual_input) {
                             // 手動入力が必要な場合
                             const folderName = data.folder_name;
@@ -1223,8 +1392,8 @@ HTML_TEMPLATE = r'''
                             
                             // 選択されたフォルダ情報を表示
                             const displayText = `${folderName} (${fileCount}ファイル)`;
-                            document.getElementById('selectedFolderPath').textContent = displayText;
-                            document.getElementById('selectedFolder').style.display = 'block';
+                            selectedFolderSpan.textContent = displayText;
+                            selectedFolderDiv.style.display = 'block';
                             
                             log(`フォルダが選択されました: ${folderName} (${fileCount}ファイル)`, 'success');
                             log(data.note, 'info');
@@ -1241,29 +1410,23 @@ HTML_TEMPLATE = r'''
                             );
                             
                             if (userPath && userPath.trim()) {
-                                document.getElementById('directoryPath').value = userPath.trim();
+                                targetInput.value = userPath.trim();
                                 log('パスが設定されました。解析を開始してください。', 'success');
                             } else {
                                 log('パスが入力されませんでした。手動でパス入力欄に入力してください。', 'info');
                                 // パス入力欄にフォーカス
-                                document.getElementById('directoryPath').focus();
+                                targetInput.focus();
                             }
-                            
-                            // ファイル入力をリセットしてアップロードを防ぐ
-                            document.getElementById('folderInput').value = '';
                         } else {
                             // 完全なパスが取得できた場合（稀なケース）
-                            document.getElementById('directoryPath').value = data.folder_path;
+                            targetInput.value = data.folder_path;
                             
                             const displayText = `${data.folder_path} (${data.file_count}ファイル)`;
-                            document.getElementById('selectedFolderPath').textContent = displayText;
-                            document.getElementById('selectedFolder').style.display = 'block';
+                            selectedFolderSpan.textContent = displayText;
+                            selectedFolderDiv.style.display = 'block';
                             
                             log(`フォルダが選択されました: ${data.file_count}ファイル`, 'success');
                             log('パス入力欄に設定されました。解析を開始してください。', 'info');
-                            
-                            // ファイル入力をリセットしてアップロードを防ぐ
-                            document.getElementById('folderInput').value = '';
                         }
                     } else {
                         throw new Error(data.error || 'パス取得に失敗しました');
@@ -1277,9 +1440,16 @@ HTML_TEMPLATE = r'''
                         firstFile.webkitRelativePath.split('/')[0] : 'Unknown';
                     const fallbackPath = `選択されたフォルダ: ${folderName} (${files.length}ファイル)`;
                     
-                    document.getElementById('directoryPath').value = fallbackPath;
-                    document.getElementById('selectedFolderPath').textContent = fallbackPath;
-                    document.getElementById('selectedFolder').style.display = 'block';
+                    if (currentTargetInput) {
+                        const targetInput = document.getElementById(currentTargetInput);
+                        const targetIndex = currentTargetInput.replace('directoryPath', '');
+                        const selectedFolderDiv = document.getElementById('selectedFolder' + targetIndex);
+                        const selectedFolderSpan = selectedFolderDiv.querySelector('.selected-folder-path');
+                        
+                        targetInput.value = fallbackPath;
+                        selectedFolderSpan.textContent = fallbackPath;
+                        selectedFolderDiv.style.display = 'block';
+                    }
                     
                     log('基本情報のみ設定されました。手動でパスを修正してください。', 'info');
                 }
@@ -1349,7 +1519,8 @@ HTML_TEMPLATE = r'''
 
         // 初期化
         preventFileUpload();
-        log('写真整理ツール Webアプリ版が起動しました', 'info');
+        updateRemoveButtons(); // 削除ボタンの初期状態を設定
+        log('写真整理ツール Webアプリ版が起動しました（複数フォルダ対応）', 'info');
     </script>
 </body>
 </html>
