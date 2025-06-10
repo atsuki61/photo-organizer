@@ -39,6 +39,7 @@ def analyze_directory():
     try:
         data = request.get_json()
         directory_paths = data.get('directory_paths', [])
+        mode = data.get('mode', 'normal')  # モードを取得、デフォルトは'normal'
         
         # 空のパスを除外
         directory_paths = [path.strip() for path in directory_paths if path and path.strip()]
@@ -72,15 +73,33 @@ def analyze_directory():
         for directory_path in directory_paths:
             image_files = []
             
-            for root, dirs, files in os.walk(directory_path):
-                for file in files:
-                    if Path(file).suffix.lower() in image_extensions:
-                        image_files.append({
-                            'name': file,
-                            'path': os.path.join(root, file),
-                            'relative_path': os.path.relpath(os.path.join(root, file), directory_path),
-                            'source_directory': directory_path
-                        })
+            if mode == 'normal':
+                # 通常モード: 指定されたディレクトリの直下にあるファイルのみをスキャン
+                print(f"通常モードでスキャン: {directory_path}")
+                try:
+                    for item in os.listdir(directory_path):
+                        item_path = os.path.join(directory_path, item)
+                        if os.path.isfile(item_path) and Path(item).suffix.lower() in image_extensions:
+                            image_files.append({
+                                'name': item,
+                                'path': item_path,
+                                'relative_path': item,
+                                'source_directory': directory_path
+                            })
+                except Exception as e:
+                    print(f"ディレクトリのスキャンエラー {directory_path}: {e}")
+            else:
+                # 親フォルダモード: サブフォルダを含めて再帰的にスキャン
+                print(f"親フォルダモードでスキャン: {directory_path}")
+                for root, dirs, files in os.walk(directory_path):
+                    for file in files:
+                        if Path(file).suffix.lower() in image_extensions:
+                            image_files.append({
+                                'name': file,
+                                'path': os.path.join(root, file),
+                                'relative_path': os.path.relpath(os.path.join(root, file), directory_path),
+                                'source_directory': root # ファイルの実際の親フォルダを記録
+                            })
             
             all_image_files.extend(image_files)
             directory_results[directory_path] = {
@@ -102,6 +121,7 @@ def analyze_directory():
         # デバッグ情報を出力
         print(f"複数フォルダ解析結果:")
         print(f"  - 対象ディレクトリ: {directory_paths}")
+        print(f"  - 実行モード: {mode}")
         print(f"  - 総ファイル数: {len(all_image_files)}")
         print(f"  - 既存フォルダ: {all_existing_folders}")
         print(f"  - 検出されたグループ: {list(groups.keys())}")
@@ -136,7 +156,8 @@ def analyze_directory():
             'single_file_groups': single_file_groups,
             'total_files': len(all_image_files),
             'existing_folders': list(all_existing_folders),
-            'directory_results': directory_results
+            'directory_results': directory_results,
+            'mode': mode  # 実行モードを保存
         }
         
         return jsonify({
@@ -191,6 +212,7 @@ def organize_files():
         
         directory_paths = current_analysis['directory_paths']
         groups = current_analysis['groups']
+        mode = current_analysis.get('mode', 'normal') # 保存したモードを取得
         
         results = {
             'moved_files': 0,
@@ -210,15 +232,30 @@ def organize_files():
             
             # 各ディレクトリでフォルダを作成し、ファイルを移動
             for source_directory, dir_files in files_by_directory.items():
+                
+                destination_folder_path = None
+                if mode == 'normal':
+                    # 通常モード: サブフォルダを含めて既存の同名フォルダを探す
+                    existing_path = find_existing_folder_recursive(source_directory, folder_name)
+                    if existing_path:
+                        destination_folder_path = existing_path
+                        print(f"通常モード: 既存フォルダ '{existing_path}' に移動します")
+                    else:
+                        # 見つからなければ、指定ディレクトリ直下に作成
+                        destination_folder_path = os.path.join(source_directory, folder_name)
+                        print(f"通常モード: 新規フォルダ '{destination_folder_path}' を作成します")
+                else: # parent mode
+                    # 親フォルダモード: 従来通り source_directory 直下に作成
+                    destination_folder_path = os.path.join(source_directory, folder_name)
+
                 # フォルダを作成（既存の場合はスキップ）
-                folder_path = os.path.join(source_directory, folder_name)
-                folder_existed = os.path.exists(folder_path)
+                folder_existed = os.path.exists(destination_folder_path)
                 
                 try:
-                    os.makedirs(folder_path, exist_ok=True)
+                    os.makedirs(destination_folder_path, exist_ok=True)
                     if not folder_existed:
                         results['created_folders'] += 1
-                        print(f"フォルダを作成: {folder_path}")
+                        print(f"フォルダを作成: {destination_folder_path}")
                 except Exception as e:
                     error_msg = f"フォルダ作成エラー '{folder_name}' in {source_directory}: {str(e)}"
                     results['errors'].append(error_msg)
@@ -238,7 +275,7 @@ def organize_files():
                             continue
                         
                         # 移動先のファイル名を決定（重複回避）
-                        destination_path = get_unique_filename(folder_path, file_info['name'])
+                        destination_path = get_unique_filename(destination_folder_path, file_info['name'])
                         
                         # ファイルを移動
                         try:
@@ -250,9 +287,9 @@ def organize_files():
                             new_name = os.path.basename(destination_path)
                             if original_name != new_name:
                                 # エラーではなく情報として記録
-                                print(f"リネーム: {original_name} → {new_name} in {folder_path}")
+                                print(f"リネーム: {original_name} → {new_name} in {destination_folder_path}")
                             else:
-                                print(f"移動: {original_name} → {folder_path}")
+                                print(f"移動: {original_name} → {destination_folder_path}")
                             
                         except PermissionError as e:
                             error_msg = f"ファイル移動権限エラー '{file_info['name']}': {str(e)}"
@@ -293,6 +330,17 @@ def organize_files():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+def find_existing_folder_recursive(root_path, folder_name_to_find):
+    """指定されたパス内で、特定の名前のフォルダを再帰的に検索する"""
+    print(f"'{root_path}'内で'{folder_name_to_find}'を再帰的に検索中...")
+    for root, dirs, files in os.walk(root_path):
+        if folder_name_to_find in dirs:
+            found_path = os.path.join(root, folder_name_to_find)
+            print(f"  -> 発見: {found_path}")
+            return found_path
+    print(f"  -> 見つかりませんでした")
+    return None
 
 def get_unique_filename(folder_path, filename):
     """重複しないファイル名を生成（(1)から順番に連続した番号）"""
@@ -384,6 +432,81 @@ def get_folder_path():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/scan_subfolders', methods=['POST'])
+def scan_subfolders():
+    """親フォルダからサブフォルダを検出"""
+    try:
+        data = request.get_json()
+        parent_folder_path = data.get('parent_folder_path', '').strip()
+        
+        if not parent_folder_path:
+            return jsonify({'error': '親フォルダのパスが入力されていません'}), 400
+        
+        if not os.path.exists(parent_folder_path):
+            return jsonify({'error': '指定された親フォルダが存在しません'}), 400
+        
+        if not os.path.isdir(parent_folder_path):
+            return jsonify({'error': '指定されたパスはフォルダではありません'}), 400
+        
+        # サブフォルダを検出
+        subfolders = []
+        try:
+            for item in os.listdir(parent_folder_path):
+                item_path = os.path.join(parent_folder_path, item)
+                if os.path.isdir(item_path) and not item.startswith('.'):
+                    # 画像ファイル数を数える
+                    image_count = count_images_in_folder(item_path)
+                    
+                    subfolders.append({
+                        'name': item,
+                        'path': item_path,
+                        'image_count': image_count,
+                        'selected': True  # デフォルトで選択状態
+                    })
+        except PermissionError:
+            return jsonify({'error': '親フォルダへのアクセス権限がありません'}), 403
+        
+        # サブフォルダを名前順でソート
+        subfolders.sort(key=lambda x: x['name'])
+        
+        # 結果をログ出力
+        print(f"親フォルダ検出結果:")
+        print(f"  - 親フォルダ: {parent_folder_path}")
+        print(f"  - 検出されたサブフォルダ: {len(subfolders)}")
+        for folder in subfolders:
+            print(f"    {folder['name']}: {folder['image_count']}画像")
+        
+        return jsonify({
+            'success': True,
+            'parent_folder': parent_folder_path,
+            'subfolders': subfolders,
+            'total_subfolders': len(subfolders)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def count_images_in_folder(folder_path):
+    """フォルダ内の画像ファイル数を数える"""
+    image_extensions = {
+        '.jpg', '.jpeg', '.jfif', '.jpe',  # JPEG系
+        '.png', '.gif', '.bmp', '.tiff', '.tif',  # 一般的な形式
+        '.webp', '.avif', '.heic', '.heif',  # 新しい形式
+        '.raw', '.cr2', '.nef', '.arw', '.dng',  # RAW形式
+        '.svg', '.ico'  # その他
+    }
+    
+    count = 0
+    try:
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                if Path(file).suffix.lower() in image_extensions:
+                    count += 1
+    except Exception:
+        pass  # エラーが発生した場合は0を返す
+    
+    return count
 
 @app.route('/api/download_plan')
 def download_plan():
@@ -1044,6 +1167,129 @@ HTML_TEMPLATE = r'''
                 font-size: 1.3em;
             }
         }
+        
+        /* モード選択のスタイル */
+        .mode-selection {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .mode-selection h3 {
+            margin-bottom: 15px;
+            color: #495057;
+            font-size: 1.2em;
+        }
+        .mode-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .mode-btn {
+            background: white;
+            border: 2px solid #dee2e6;
+            color: #495057;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        .mode-btn:hover {
+            border-color: #4facfe;
+            background: #e9f4ff;
+        }
+        .mode-btn.active {
+            background: #4facfe;
+            border-color: #4facfe;
+            color: white;
+        }
+        .mode-description {
+            position: relative;
+            min-height: 60px;
+        }
+        .mode-desc {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            color: #666;
+            line-height: 1.6;
+        }
+        .mode-desc.active {
+            opacity: 1;
+        }
+        
+        /* 親フォルダモード用スタイル */
+        .parent-folder-section {
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            background: white;
+            margin-bottom: 20px;
+        }
+        .parent-folder-section h3 {
+            margin-bottom: 15px;
+            color: #495057;
+            font-size: 1.1em;
+        }
+        .subfolder-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .subfolder-section h4 {
+            margin-bottom: 15px;
+            color: #495057;
+            font-size: 1.0em;
+        }
+        .subfolder-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .subfolder-item {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        .subfolder-item:hover {
+            border-color: #4facfe;
+            background: #f0f8ff;
+        }
+        .subfolder-item.selected {
+            border-color: #28a745;
+            background: #d4edda;
+        }
+        .subfolder-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .subfolder-info {
+            flex: 1;
+        }
+        .subfolder-name {
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 2px;
+        }
+        .subfolder-details {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+        .subfolder-controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
     </style>
 </head>
 <body>
@@ -1056,42 +1302,95 @@ HTML_TEMPLATE = r'''
         <div class="main-content">
             <div class="section">
                 <h2>📁 ディレクトリを指定</h2>
-                <p style="margin-bottom: 20px; color: #666;">
-                    複数のフォルダを同時に整理できます。パスを追加/削除してから「🔍 解析開始」をクリックしてください。
-                </p>
                 
-                <!-- 保存されたパス一覧 -->
-                <div id="savedPathsSection" class="saved-paths-section" style="margin-bottom: 20px; display: none;">
-                    <h3>💾 保存されたパス</h3>
-                    <div id="savedPathsList" class="saved-paths-list"></div>
-                    <button type="button" class="btn btn-secondary" onclick="clearAllSavedPaths()" style="margin-top: 10px;">🗑️ 全削除</button>
-                </div>
-                
-                <div id="pathInputs">
-                    <div class="path-input-group" data-index="0">
-                        <div class="form-group">
-                            <label for="directoryPath0">フォルダ 1 のパス:</label>
-                            <div style="display: flex; gap: 10px; align-items: center;">
-                                <input type="text" id="directoryPath0" class="directory-path" placeholder="例: C:/Users/YourName/Pictures" style="flex: 1;">
-                                <button type="button" class="btn btn-warning folder-select-btn" data-target="directoryPath0">📁</button>
-                                <button type="button" class="btn btn-info" onclick="saveCurrentPath(0)">💾</button>
-                                <button type="button" class="btn btn-secondary remove-path-btn" onclick="removePath(0)" style="display: none;">❌</button>
-                            </div>
-                            <small style="color: #666; margin-top: 5px; display: block;">
-                                💡 「📁」でフォルダ選択、「💾」でパス保存、保存済みパスをクリックで呼び出し
-                            </small>
+                <!-- モード選択 -->
+                <div class="mode-selection" style="margin-bottom: 20px;">
+                    <h3>🔧 整理モード選択</h3>
+                    <div class="mode-buttons">
+                        <button type="button" class="btn mode-btn active" id="normalModeBtn" onclick="switchMode('normal')">
+                            📂 通常モード
+                        </button>
+                        <button type="button" class="btn mode-btn" id="parentModeBtn" onclick="switchMode('parent')">
+                            🗂️ 親フォルダモード
+                        </button>
+                    </div>
+                    <div class="mode-description">
+                        <div id="normalModeDesc" class="mode-desc active">
+                            複数のフォルダを直接指定して整理します。各フォルダのパスを個別に入力してください。
                         </div>
-                        <div class="selected-folder" id="selectedFolder0" style="display: none;">
-                            <strong>選択されたフォルダ:</strong> <span class="selected-folder-path"></span>
-                            <br><small style="color: #666;">フォルダ選択後、完全なパスを入力してください</small>
+                        <div id="parentModeDesc" class="mode-desc">
+                            親フォルダを指定すると、その中のサブフォルダを自動検出して選択的に整理できます。
                         </div>
                     </div>
                 </div>
                 
-                <div class="btn-group" style="margin-top: 15px;">
-                    <button class="btn btn-success" onclick="addPath()">➕ フォルダを追加</button>
-                    <button class="btn btn-primary" onclick="analyzeDirectories()">🔍 解析開始</button>
-                    <button class="btn btn-info" onclick="showUsageModal()">❓ 使い方</button>
+                <!-- 親フォルダモード用UI -->
+                <div id="parentFolderSection" class="parent-folder-section" style="display: none;">
+                    <h3>🗂️ 親フォルダを指定</h3>
+                    <div class="form-group">
+                        <label for="parentFolderPath">親フォルダのパス:</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="text" id="parentFolderPath" placeholder="例: C:/Users/YourName/Pictures/動物フォルダ" style="flex: 1;">
+                            <button type="button" class="btn btn-warning" onclick="selectParentFolder()">📁</button>
+                            <button type="button" class="btn btn-info" onclick="saveParentPath()">💾</button>
+                            <button type="button" class="btn btn-primary" onclick="scanSubfolders()">🔍 サブフォルダ検出</button>
+                        </div>
+                        <small style="color: #666; margin-top: 5px; display: block;">
+                            親フォルダを指定してサブフォルダを自動検出します
+                        </small>
+                    </div>
+                    
+                    <!-- サブフォルダ一覧 -->
+                    <div id="subfolderSection" class="subfolder-section" style="display: none;">
+                        <h4>📋 検出されたサブフォルダ</h4>
+                        <div id="subfolderList" class="subfolder-list"></div>
+                        <div class="subfolder-controls" style="margin-top: 15px;">
+                            <button type="button" class="btn btn-success" onclick="selectAllSubfolders()">✅ 全選択</button>
+                            <button type="button" class="btn btn-secondary" onclick="deselectAllSubfolders()">❌ 全解除</button>
+                            <button type="button" class="btn btn-primary" onclick="analyzeSelectedSubfolders()">🔍 選択したフォルダを解析</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 通常モード用UI -->
+                <div id="normalFolderSection" class="normal-folder-section">
+                    <p style="margin-bottom: 20px; color: #666;">
+                        複数のフォルダを同時に整理できます。パスを追加/削除してから「🔍 解析開始」をクリックしてください。
+                    </p>
+                    
+                    <!-- 保存されたパス一覧 -->
+                    <div id="savedPathsSection" class="saved-paths-section" style="margin-bottom: 20px; display: none;">
+                        <h3>💾 保存されたパス</h3>
+                        <div id="savedPathsList" class="saved-paths-list"></div>
+                        <button type="button" class="btn btn-secondary" onclick="clearAllSavedPaths()" style="margin-top: 10px;">🗑️ 全削除</button>
+                    </div>
+                    
+                    <div id="pathInputs">
+                        <div class="path-input-group" data-index="0">
+                            <div class="form-group">
+                                <label for="directoryPath0">フォルダ 1 のパス:</label>
+                                <div style="display: flex; gap: 10px; align-items: center;">
+                                    <input type="text" id="directoryPath0" class="directory-path" placeholder="例: C:/Users/YourName/Pictures" style="flex: 1;">
+                                    <button type="button" class="btn btn-warning folder-select-btn" data-target="directoryPath0">📁</button>
+                                    <button type="button" class="btn btn-info" onclick="saveCurrentPath(0)">💾</button>
+                                    <button type="button" class="btn btn-secondary remove-path-btn" onclick="removePath(0)" style="display: none;">❌</button>
+                                </div>
+                                <small style="color: #666; margin-top: 5px; display: block;">
+                                    💡 「📁」でフォルダ選択、「💾」でパス保存、保存済みパスをクリックで呼び出し
+                                </small>
+                            </div>
+                            <div class="selected-folder" id="selectedFolder0" style="display: none;">
+                                <strong>選択されたフォルダ:</strong> <span class="selected-folder-path"></span>
+                                <br><small style="color: #666;">フォルダ選択後、完全なパスを入力してください</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="btn-group" style="margin-top: 15px;">
+                        <button class="btn btn-success" onclick="addPath()">➕ フォルダを追加</button>
+                        <button class="btn btn-primary" onclick="analyzeDirectories()">🔍 解析開始</button>
+                        <button class="btn btn-info" onclick="showUsageModal()">❓ 使い方</button>
+                    </div>
                 </div>
                 
                 <!-- 隠しファイル入力（フォルダ選択用） -->
@@ -1199,6 +1498,45 @@ HTML_TEMPLATE = r'''
                     <p><strong>• 1ファイルスキップ：</strong> 1ファイルのみのグループは基本的にスキップされます</p>
                     <p><strong>• パス入力必須：</strong> フォルダ選択後は必ず完全なパスを入力してください</p>
                 </div>
+                
+                <div class="step">
+                    <h3>🗂️ 親フォルダモードの使い方</h3>
+                    <p><strong>🎯 こんな時に便利：</strong> 大きな親フォルダの中に複数のサブフォルダがあり、それぞれを個別に整理したい場合</p>
+                    
+                    <h4>📋 使用例</h4>
+                    <p><strong>フォルダ構造例：</strong></p>
+                    <p><code>📁 動物フォルダ/</code></p>
+                    <p><code>  ├── 📁 犬/</code></p>
+                    <p><code>  ├── 📁 猫/</code></p>
+                    <p><code>  └── 📁 ペンギン/</code></p>
+                    
+                    <h4>⚙️ 操作手順</h4>
+                    <p><strong>1.</strong> 「🗂️ 親フォルダモード」を選択</p>
+                    <p><strong>2.</strong> 親フォルダ（例：動物フォルダ）のパスを入力</p>
+                    <p><strong>3.</strong> 「🔍 サブフォルダ検出」でサブフォルダを自動検出</p>
+                    <p><strong>4.</strong> 整理したいサブフォルダを選択（チェックボックス）</p>
+                    <p><strong>5.</strong> 「🔍 選択したフォルダを解析」で一括解析</p>
+                    
+                    <h4>✨ 便利機能</h4>
+                    <p><strong>• 画像数表示：</strong> 各サブフォルダの画像ファイル数を表示</p>
+                    <p><strong>• 選択的処理：</strong> 必要なサブフォルダのみを選択して処理</p>
+                    <p><strong>• 一括操作：</strong> 「✅ 全選択」「❌ 全解除」で効率的な選択</p>
+                    <p><strong>• パス保存：</strong> 親フォルダパスも保存・呼び出し可能</p>
+                </div>
+                
+                <div class="step">
+                    <h3>🔧 特殊機能</h3>
+                    <p><strong>• 複数人名対応：</strong> 「田中佐藤.jpg」→ 既存の「田中」フォルダに移動</p>
+                    <p><strong>• 1ファイル対応：</strong> 1ファイルでも既存フォルダと同名なら移動</p>
+                    <p><strong>• 重複回避：</strong> 同名ファイルは自動的にリネーム</p>
+                </div>
+                
+                <div class="step">
+                    <h3>⚠️ 注意事項</h3>
+                    <p><strong>• バックアップ推奨：</strong> 実行前に重要なファイルのバックアップを取ってください</p>
+                    <p><strong>• 1ファイルスキップ：</strong> 1ファイルのみのグループは基本的にスキップされます</p>
+                    <p><strong>• パス入力必須：</strong> フォルダ選択後は必ず完全なパスを入力してください</p>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-primary" onclick="closeUsageModal()">理解しました</button>
@@ -1215,6 +1553,10 @@ HTML_TEMPLATE = r'''
             logSection.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
             logSection.scrollTop = logSection.scrollHeight;
         }
+
+        // グローバル変数宣言（初期化エラー回避）
+        var currentMode = 'normal'; // 'normal' または 'parent'
+        var detectedSubfolders = []; // 検出されたサブフォルダ一覧
 
         async function analyzeDirectories() {
             const directoryPaths = Array.from(document.querySelectorAll('.directory-path'))
@@ -1237,7 +1579,10 @@ HTML_TEMPLATE = r'''
                 const response = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ directory_paths: directoryPaths })
+                    body: JSON.stringify({
+                        directory_paths: directoryPaths,
+                        mode: currentMode
+                    })
                 });
 
                 const data = await response.json();
@@ -1462,20 +1807,31 @@ HTML_TEMPLATE = r'''
                     const data = await response.json();
                     
                     if (data.success) {
-                        const targetInput = document.getElementById(currentTargetInput);
-                        const targetIndex = currentTargetInput.replace('directoryPath', '');
-                        const selectedFolderDiv = document.getElementById('selectedFolder' + targetIndex);
-                        const selectedFolderSpan = selectedFolderDiv.querySelector('.selected-folder-path');
+                        let targetInput, selectedFolderDiv, selectedFolderSpan;
+                        
+                        if (currentTargetInput === 'parentFolderPath') {
+                            // 親フォルダモードの場合
+                            targetInput = document.getElementById('parentFolderPath');
+                            selectedFolderDiv = null; // 親フォルダモードでは選択フォルダ表示なし
+                        } else {
+                            // 通常モードの場合
+                            targetInput = document.getElementById(currentTargetInput);
+                            const targetIndex = currentTargetInput.replace('directoryPath', '');
+                            selectedFolderDiv = document.getElementById('selectedFolder' + targetIndex);
+                            selectedFolderSpan = selectedFolderDiv ? selectedFolderDiv.querySelector('.selected-folder-path') : null;
+                        }
                         
                         if (data.requires_manual_input) {
                             // 手動入力が必要な場合
                             const folderName = data.folder_name;
                             const fileCount = data.file_count;
                             
-                            // 選択されたフォルダ情報を表示
-                            const displayText = `${folderName} (${fileCount}ファイル)`;
-                            selectedFolderSpan.textContent = displayText;
-                            selectedFolderDiv.style.display = 'block';
+                            // 選択されたフォルダ情報を表示（通常モードのみ）
+                            if (selectedFolderDiv && selectedFolderSpan) {
+                                const displayText = `${folderName} (${fileCount}ファイル)`;
+                                selectedFolderSpan.textContent = displayText;
+                                selectedFolderDiv.style.display = 'block';
+                            }
                             
                             log(`フォルダが選択されました: ${folderName} (${fileCount}ファイル)`, 'success');
                             log(data.note, 'info');
@@ -1503,9 +1859,11 @@ HTML_TEMPLATE = r'''
                             // 完全なパスが取得できた場合（稀なケース）
                             targetInput.value = data.folder_path;
                             
-                            const displayText = `${data.folder_path} (${data.file_count}ファイル)`;
-                            selectedFolderSpan.textContent = displayText;
-                            selectedFolderDiv.style.display = 'block';
+                            if (selectedFolderDiv && selectedFolderSpan) {
+                                const displayText = `${data.folder_path} (${data.file_count}ファイル)`;
+                                selectedFolderSpan.textContent = displayText;
+                                selectedFolderDiv.style.display = 'block';
+                            }
                             
                             log(`フォルダが選択されました: ${data.file_count}ファイル`, 'success');
                             log('パス入力欄に設定されました。解析を開始してください。', 'info');
@@ -1524,13 +1882,22 @@ HTML_TEMPLATE = r'''
                     
                     if (currentTargetInput) {
                         const targetInput = document.getElementById(currentTargetInput);
-                        const targetIndex = currentTargetInput.replace('directoryPath', '');
-                        const selectedFolderDiv = document.getElementById('selectedFolder' + targetIndex);
-                        const selectedFolderSpan = selectedFolderDiv.querySelector('.selected-folder-path');
                         
-                        targetInput.value = fallbackPath;
-                        selectedFolderSpan.textContent = fallbackPath;
-                        selectedFolderDiv.style.display = 'block';
+                        if (currentTargetInput === 'parentFolderPath') {
+                            // 親フォルダモードの場合
+                            targetInput.value = fallbackPath;
+                        } else {
+                            // 通常モードの場合
+                            const targetIndex = currentTargetInput.replace('directoryPath', '');
+                            const selectedFolderDiv = document.getElementById('selectedFolder' + targetIndex);
+                            const selectedFolderSpan = selectedFolderDiv ? selectedFolderDiv.querySelector('.selected-folder-path') : null;
+                            
+                            targetInput.value = fallbackPath;
+                            if (selectedFolderSpan) {
+                                selectedFolderSpan.textContent = fallbackPath;
+                                selectedFolderDiv.style.display = 'block';
+                            }
+                        }
                     }
                     
                     log('基本情報のみ設定されました。手動でパスを修正してください。', 'info');
@@ -1603,7 +1970,261 @@ HTML_TEMPLATE = r'''
         preventFileUpload();
         updateRemoveButtons(); // 削除ボタンの初期状態を設定
         loadSavedPaths(); // 保存されたパスを読み込み
+        initializeMode(); // モードを初期化
         log('写真整理ツール Webアプリ版が起動しました（複数フォルダ対応）', 'info');
+        
+        // === モード管理機能 ===
+        
+        // モード初期化
+        function initializeMode() {
+            switchMode('normal');
+        }
+        
+        // モード切り替え
+        function switchMode(mode) {
+            console.log('switchMode called with mode:', mode); // デバッグ用
+            currentMode = mode;
+            
+            // ボタンの状態更新
+            document.getElementById('normalModeBtn').classList.toggle('active', mode === 'normal');
+            document.getElementById('parentModeBtn').classList.toggle('active', mode === 'parent');
+            
+            // 説明文の状態更新
+            document.getElementById('normalModeDesc').classList.toggle('active', mode === 'normal');
+            document.getElementById('parentModeDesc').classList.toggle('active', mode === 'parent');
+            
+            // UI表示切り替え
+            document.getElementById('normalFolderSection').style.display = mode === 'normal' ? 'block' : 'none';
+            document.getElementById('parentFolderSection').style.display = mode === 'parent' ? 'block' : 'none';
+            
+            // 結果表示をリセット
+            resetAnalysisResults();
+            
+            log(`${mode === 'normal' ? '通常' : '親フォルダ'}モードに切り替えました`, 'info');
+        }
+        
+        // 解析結果をリセット
+        function resetAnalysisResults() {
+            document.getElementById('statsSection').classList.add('hidden');
+            document.getElementById('previewSection').classList.add('hidden');
+        }
+        
+        // === 親フォルダモード機能 ===
+        
+        // 親フォルダ選択
+        function selectParentFolder() {
+            currentTargetInput = 'parentFolderPath';
+            document.getElementById('folderInput').click();
+        }
+        
+        // 親フォルダパス保存
+        function saveParentPath() {
+            const pathInput = document.getElementById('parentFolderPath');
+            const path = pathInput.value.trim();
+            
+            if (!path) {
+                alert('親フォルダのパスが入力されていません');
+                return;
+            }
+            
+            // パス名の入力を促す
+            const pathName = prompt(`親フォルダパスに名前を付けてください:\n\n${path}`, getDefaultPathName(path) + '（親フォルダ）');
+            
+            if (pathName === null) return;
+            if (!pathName.trim()) {
+                alert('名前を入力してください');
+                return;
+            }
+            
+            // 保存済みパスを取得
+            let savedPaths = [];
+            try {
+                savedPaths = JSON.parse(localStorage.getItem('photoOrganizerPaths') || '[]');
+            } catch (error) {
+                savedPaths = [];
+            }
+            
+            // 同じパスが既に存在するかチェック
+            const existingIndex = savedPaths.findIndex(p => p.path === path);
+            if (existingIndex !== -1) {
+                if (confirm(`このパスは既に「${savedPaths[existingIndex].name}」として保存されています。\n上書きしますか？`)) {
+                    savedPaths[existingIndex].name = pathName.trim();
+                } else {
+                    return;
+                }
+            } else {
+                savedPaths.push({
+                    name: pathName.trim(),
+                    path: path,
+                    savedAt: new Date().toISOString(),
+                    type: 'parent' // 親フォルダとしてマーク
+                });
+            }
+            
+            try {
+                localStorage.setItem('photoOrganizerPaths', JSON.stringify(savedPaths));
+                displaySavedPaths(savedPaths);
+                log(`親フォルダパスを保存しました: ${pathName.trim()}`, 'success');
+            } catch (error) {
+                alert('パスの保存に失敗しました');
+            }
+        }
+        
+        // サブフォルダ検出
+        async function scanSubfolders() {
+            const parentPath = document.getElementById('parentFolderPath').value.trim();
+            
+            if (!parentPath) {
+                alert('親フォルダのパスを入力してください');
+                return;
+            }
+            
+            log('サブフォルダを検出中...', 'info');
+            
+            try {
+                const response = await fetch('/api/scan_subfolders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ parent_folder_path: parentPath })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    detectedSubfolders = data.subfolders;
+                    displaySubfolders(detectedSubfolders);
+                    
+                    log(`サブフォルダ検出完了: ${data.total_subfolders}個のフォルダを発見`, 'success');
+                    data.subfolders.forEach(folder => {
+                        log(`  - ${folder.name}: ${folder.image_count}画像`, 'info');
+                    });
+                } else {
+                    log(`エラー: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log(`エラー: ${error.message}`, 'error');
+            }
+        }
+        
+        // サブフォルダ一覧表示
+        function displaySubfolders(subfolders) {
+            const subfolderSection = document.getElementById('subfolderSection');
+            const subfolderList = document.getElementById('subfolderList');
+            
+            if (subfolders.length === 0) {
+                subfolderSection.style.display = 'none';
+                return;
+            }
+            
+            subfolderSection.style.display = 'block';
+            subfolderList.innerHTML = '';
+            
+            subfolders.forEach((folder, index) => {
+                const item = document.createElement('div');
+                item.className = `subfolder-item ${folder.selected ? 'selected' : ''}`;
+                item.innerHTML = `
+                    <input type="checkbox" class="subfolder-checkbox" 
+                           ${folder.selected ? 'checked' : ''} 
+                           onchange="toggleSubfolder(${index})">
+                    <div class="subfolder-info">
+                        <div class="subfolder-name">${folder.name}</div>
+                        <div class="subfolder-details">${folder.image_count} 画像ファイル</div>
+                    </div>
+                `;
+                
+                // クリックで選択状態を切り替え
+                item.addEventListener('click', function(e) {
+                    if (e.target.type !== 'checkbox') {
+                        toggleSubfolder(index);
+                    }
+                });
+                
+                subfolderList.appendChild(item);
+            });
+        }
+        
+        // サブフォルダの選択状態を切り替え
+        function toggleSubfolder(index) {
+            if (index >= 0 && index < detectedSubfolders.length) {
+                detectedSubfolders[index].selected = !detectedSubfolders[index].selected;
+                displaySubfolders(detectedSubfolders);
+                
+                const selectedCount = detectedSubfolders.filter(f => f.selected).length;
+                log(`フォルダ選択更新: ${selectedCount}/${detectedSubfolders.length}個選択中`, 'info');
+            }
+        }
+        
+        // 全サブフォルダ選択
+        function selectAllSubfolders() {
+            detectedSubfolders.forEach(folder => folder.selected = true);
+            displaySubfolders(detectedSubfolders);
+            log(`全サブフォルダを選択しました: ${detectedSubfolders.length}個`, 'info');
+        }
+        
+        // 全サブフォルダ選択解除
+        function deselectAllSubfolders() {
+            detectedSubfolders.forEach(folder => folder.selected = false);
+            displaySubfolders(detectedSubfolders);
+            log('全サブフォルダの選択を解除しました', 'info');
+        }
+        
+        // 選択されたサブフォルダを解析
+        async function analyzeSelectedSubfolders() {
+            const selectedFolders = detectedSubfolders.filter(f => f.selected);
+            
+            if (selectedFolders.length === 0) {
+                alert('解析するサブフォルダを選択してください');
+                return;
+            }
+            
+            // 選択されたサブフォルダのパスを抽出
+            const directoryPaths = selectedFolders.map(f => f.path);
+            
+            log(`${selectedFolders.length}個の選択されたサブフォルダを解析中...`, 'info');
+            selectedFolders.forEach((folder, index) => {
+                log(`  ${index + 1}. ${folder.name}`, 'info');
+            });
+            
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        directory_paths: directoryPaths,
+                        mode: currentMode
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('totalFiles').textContent = data.total_files;
+                    document.getElementById('totalGroups').textContent = data.total_groups;
+                    document.getElementById('skippedFiles').textContent = data.skipped_single_files || 0;
+                    document.getElementById('statsSection').classList.remove('hidden');
+                    
+                    log(`解析完了: ${selectedFolders.length}サブフォルダ、${data.total_files}ファイル、${data.total_groups}グループ、${data.skipped_single_files || 0}ファイルスキップ`, 'success');
+                    
+                    if (data.directory_summary) {
+                        data.directory_summary.forEach((dir, index) => {
+                            const folderName = selectedFolders.find(f => f.path === dir.path)?.name || `フォルダ${index + 1}`;
+                            log(`  - ${folderName}: ${dir.file_count}ファイル`, 'info');
+                        });
+                    }
+                    
+                    if (data.single_file_examples && data.single_file_examples.length > 0) {
+                        log(`スキップ例: ${data.single_file_examples.slice(0, 5).join(', ')}`, 'info');
+                    }
+                    
+                    // プレビューを取得
+                    showPreview();
+                } else {
+                    log(`エラー: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log(`エラー: ${error.message}`, 'error');
+            }
+        }
         
         // === パス記憶機能 ===
         
@@ -1720,29 +2341,35 @@ HTML_TEMPLATE = r'''
         
         // 保存されたパスを呼び出し
         function callSavedPath(path) {
-            // 現在アクティブな（空の）入力欄を探す
-            const pathInputs = document.querySelectorAll('.directory-path');
-            let targetInput = null;
-            
-            for (let input of pathInputs) {
-                if (!input.value.trim()) {
-                    targetInput = input;
-                    break;
+            if (currentMode === 'parent') {
+                // 親フォルダモードの場合は親フォルダ入力欄に設定
+                document.getElementById('parentFolderPath').value = path;
+                log(`保存されたパスを親フォルダに設定しました: ${path}`, 'success');
+            } else {
+                // 通常モードの場合は既存の処理
+                const pathInputs = document.querySelectorAll('.directory-path');
+                let targetInput = null;
+                
+                for (let input of pathInputs) {
+                    if (!input.value.trim()) {
+                        targetInput = input;
+                        break;
+                    }
                 }
-            }
-            
-            // 空の入力欄がない場合は新しく追加
-            if (!targetInput) {
-                addPath();
-                // 新しく追加された入力欄を取得
-                const newInputs = document.querySelectorAll('.directory-path');
-                targetInput = newInputs[newInputs.length - 1];
-            }
-            
-            if (targetInput) {
-                targetInput.value = path;
-                targetInput.focus();
-                log(`保存されたパスを呼び出しました: ${path}`, 'success');
+                
+                // 空の入力欄がない場合は新しく追加
+                if (!targetInput) {
+                    addPath();
+                    // 新しく追加された入力欄を取得
+                    const newInputs = document.querySelectorAll('.directory-path');
+                    targetInput = newInputs[newInputs.length - 1];
+                }
+                
+                if (targetInput) {
+                    targetInput.value = path;
+                    targetInput.focus();
+                    log(`保存されたパスを呼び出しました: ${path}`, 'success');
+                }
             }
         }
         

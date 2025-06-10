@@ -43,7 +43,7 @@ echo 終了するには Ctrl+C を押してください
 echo.
 
 REM ブラウザを遅延実行で自動オープン（バックグラウンド）
-start /B cmd /c "timeout /t 5 /nobreak > nul && start http://localhost:5000"
+start /B cmd /c "timeout /t 2 /nobreak > nul && start http://localhost:5000"
 
 REM Webアプリを実行（フォアグラウンド）
 python photo_organizer_webapp.py 
