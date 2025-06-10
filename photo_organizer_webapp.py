@@ -113,10 +113,24 @@ def analyze_directory():
         # 全ディレクトリの既存フォルダを収集
         all_existing_folders = set()
         for directory_path in directory_paths:
-            for item in os.listdir(directory_path):
-                item_path = os.path.join(directory_path, item)
-                if os.path.isdir(item_path) and not item.startswith('.'):
-                    all_existing_folders.add(item)
+            # モードによってフォルダの収集方法を変える
+            if mode == 'normal':
+                # 通常モード: サブフォルダもすべて含める
+                print(f"通常モードで既存フォルダを再帰的に検索: {directory_path}")
+                for root, dirs, _ in os.walk(directory_path):
+                    for d in dirs:
+                        if not d.startswith('.'):
+                            all_existing_folders.add(d)
+            else:  # 'parent' mode
+                # 親フォルダモード: 指定されたフォルダの直下のみ
+                print(f"親フォルダモードで既存フォルダを検索: {directory_path}")
+                try:
+                    for item in os.listdir(directory_path):
+                        item_path = os.path.join(directory_path, item)
+                        if os.path.isdir(item_path) and not item.startswith('.'):
+                            all_existing_folders.add(item)
+                except Exception as e:
+                    print(f"ディレクトリの読み取りエラー {directory_path}: {e}")
         
         # デバッグ情報を出力
         print(f"複数フォルダ解析結果:")
